@@ -1,4 +1,5 @@
-"""Cab Deck server: serves the tablet panel and presses vJoy buttons.
+"""Cab Deck server: serves the tablet panel, presses vJoy buttons and
+reports truck state from game telemetry.
 
 Run on Windows:  python server.py
 Run on macOS:    python server.py --dry-run
@@ -10,11 +11,12 @@ import json
 import logging
 import re
 import socket
+import struct
 import subprocess
 import sys
 import time
 from collections import deque
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -31,13 +33,32 @@ LOG_PATH = BASE_DIR / "logs" / "cab_deck.log"
 DEFAULT_PORT = 8000
 
 BUTTON_ID_PATTERN = re.compile(r"^cab_deck_btn_(\d{3})$")
-BUTTON_TYPES = ("tap", "hold")
+SWITCH_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+CONTROL_TYPES = ("tap", "hold", "switch")
 MAX_LOGGED_TEXT = 500
 MAX_LOG_LINES = 1000
+
+TELEMETRY_POLL_S = 0.1
+TELEMETRY_RETRY_S = 5.0
+# Telemetry needs a moment to reflect a press; skip corrections right after one.
+SWITCH_SETTLE_S = 1.0
+
+INDICATORS = (
+    "engine",
+    "lights",
+    "high_beam",
+    "blinker_left",
+    "blinker_right",
+    "hazards",
+    "park_brake",
+    "wipers",
+    "trailer",
+)
 
 log = logging.getLogger("cab_deck")
 
 SetButton = Callable[[int, bool], None]
+TelemetryReader = Callable[[], dict[str, Any] | None]
 
 
 class ConfigError(Exception):
@@ -60,9 +81,22 @@ class LastErrorHandler(logging.Handler):
 
 
 @dataclass
+class SwitchState:
+    position: int = 0
+    target: int = 0
+    last_press: float = 0.0
+    task: asyncio.Task | None = None
+
+    @property
+    def moving(self) -> bool:
+        return self.task is not None and not self.task.done()
+
+
+@dataclass
 class DeckState:
     config: dict[str, Any]
     set_button: SetButton
+    read_telemetry: TelemetryReader
     input_mode: str
     vjoy_buttons: int | None
     commit: str
@@ -70,11 +104,15 @@ class DeckState:
     started_at: float = field(default_factory=time.monotonic)
     pressed: set[int] = field(default_factory=set)
     release_tasks: dict[int, asyncio.Task] = field(default_factory=dict)
-    clients: int = 0
+    switches: dict[str, SwitchState] = field(default_factory=dict)
+    sockets: set[WebSocket] = field(default_factory=set)
+    game: dict[str, Any] = field(default_factory=lambda: {"telemetry": False})
+    indicators: dict[str, dict[str, str]] = field(default_factory=dict)
+    last_state_message: dict[str, Any] | None = None
 
     @property
-    def buttons_by_id(self) -> dict[str, dict[str, Any]]:
-        return self.config["buttons_by_id"]
+    def controls_by_id(self) -> dict[str, dict[str, Any]]:
+        return self.config["controls_by_id"]
 
 
 # --- Logging -----------------------------------------------------------------
@@ -126,6 +164,7 @@ def validate_config(raw: Any) -> dict[str, Any]:
     config: dict[str, Any] = {
         "vjoy_device": raw.get("vjoy_device", 1),
         "tap_ms": raw.get("tap_ms", 80),
+        "switch_gap_ms": raw.get("switch_gap_ms", 150),
         "hold_timeout_s": raw.get("hold_timeout_s", 10),
         "grid": raw.get("grid", {}),
     }
@@ -134,62 +173,120 @@ def validate_config(raw: Any) -> dict[str, Any]:
         problems.append("vjoy_device must be an integer from 1 to 16.")
     if not _is_int_in(config["tap_ms"], 10, 1000):
         problems.append("tap_ms must be an integer from 10 to 1000.")
+    if not _is_int_in(config["switch_gap_ms"], 10, 2000):
+        problems.append("switch_gap_ms must be an integer from 10 to 2000.")
     if not isinstance(config["hold_timeout_s"], (int, float)) or not 0 < config["hold_timeout_s"] <= 120:
         problems.append("hold_timeout_s must be a number from 0 to 120.")
 
     grid = config["grid"]
-    if not isinstance(grid, dict) or not _is_int_in(grid.get("cols"), 1, 12) or not _is_int_in(grid.get("rows"), 1, 12):
+    grid_ok = isinstance(grid, dict) and _is_int_in(grid.get("cols"), 1, 12) and _is_int_in(grid.get("rows"), 1, 12)
+    if not grid_ok:
         problems.append('grid must look like {"cols": 4, "rows": 3}.')
 
-    buttons = raw.get("buttons")
-    if not isinstance(buttons, list) or not buttons:
+    entries = raw.get("buttons")
+    if not isinstance(entries, list) or not entries:
         problems.append("buttons must be a non-empty list.")
-        buttons = []
+        entries = []
 
-    buttons_by_id: dict[str, dict[str, Any]] = {}
-    for index, button in enumerate(buttons, start=1):
-        where = f"buttons[{index}]"
-        if not isinstance(button, dict):
-            problems.append(f"{where} must be an object.")
+    controls_by_id: dict[str, dict[str, Any]] = {}
+    used_numbers: dict[int, str] = {}
+    for index, entry in enumerate(entries, start=1):
+        control = _validate_control(entry, f"buttons[{index}]", problems)
+        if control is None:
             continue
-        button_id = button.get("id")
-        match = BUTTON_ID_PATTERN.match(button_id) if isinstance(button_id, str) else None
-        if match is None:
-            problems.append(f"{where}: id {button_id!r} must look like cab_deck_btn_001.")
+        if control["id"] in controls_by_id:
+            problems.append(f"buttons[{index}]: duplicate id {control['id']}.")
             continue
-        number = int(match.group(1))
-        if number < 1:
-            problems.append(f"{where}: {button_id} maps to vJoy button 0, numbering starts at 001.")
-        if button_id in buttons_by_id:
-            problems.append(f"{where}: duplicate id {button_id}.")
-        if button.get("type") not in BUTTON_TYPES:
-            problems.append(f"{where}: type must be one of {BUTTON_TYPES}.")
-        if not isinstance(button.get("label"), str) or not button["label"].strip():
-            problems.append(f"{where}: label must be a non-empty string.")
-        buttons_by_id[button_id] = {
-            "id": button_id,
-            "number": number,
-            "type": button.get("type"),
-            "label": button.get("label", ""),
-            "icon": button.get("icon", ""),
-            "color": button.get("color", "#8b949e"),
-        }
+        for number in _vjoy_numbers(control):
+            if number in used_numbers:
+                problems.append(f"buttons[{index}]: vJoy button {number} is already used by {used_numbers[number]}.")
+            used_numbers[number] = control["id"]
+        controls_by_id[control["id"]] = control
 
-    if isinstance(grid, dict) and _is_int_in(grid.get("cols"), 1, 12) and _is_int_in(grid.get("rows"), 1, 12):
-        if len(buttons_by_id) > grid["cols"] * grid["rows"]:
-            problems.append(f"{len(buttons_by_id)} buttons do not fit into a {grid['cols']}x{grid['rows']} grid.")
+    if grid_ok and len(controls_by_id) > grid["cols"] * grid["rows"]:
+        problems.append(f"{len(controls_by_id)} controls do not fit into a {grid['cols']}x{grid['rows']} grid.")
 
     if problems:
         raise ConfigError("Invalid config.json:\n  - " + "\n  - ".join(problems))
 
-    config["buttons_by_id"] = buttons_by_id
+    config["controls_by_id"] = controls_by_id
     return config
+
+
+def _validate_control(entry: Any, where: str, problems: list[str]) -> dict[str, Any] | None:
+    if not isinstance(entry, dict):
+        problems.append(f"{where} must be an object.")
+        return None
+
+    control_type = entry.get("type")
+    if control_type not in CONTROL_TYPES:
+        problems.append(f"{where}: type must be one of {CONTROL_TYPES}.")
+        return None
+    if not isinstance(entry.get("label"), str) or not entry["label"].strip():
+        problems.append(f"{where}: label must be a non-empty string.")
+    indicator = entry.get("indicator")
+    if indicator is not None and indicator not in INDICATORS:
+        problems.append(f"{where}: indicator must be one of {INDICATORS}.")
+
+    control: dict[str, Any] = {
+        "id": entry.get("id"),
+        "type": control_type,
+        "label": entry.get("label", ""),
+        "icon": entry.get("icon", ""),
+        "color": entry.get("color", "#8b949e"),
+        "indicator": indicator,
+    }
+
+    if control_type == "switch":
+        if not isinstance(control["id"], str) or not SWITCH_ID_PATTERN.match(control["id"]):
+            problems.append(f"{where}: switch id {control['id']!r} must be lowercase letters, digits and _.")
+            return None
+        positions = entry.get("positions")
+        if (
+            not isinstance(positions, list)
+            or not 2 <= len(positions) <= 8
+            or not all(isinstance(p, str) and p.strip() for p in positions)
+        ):
+            problems.append(f"{where}: positions must be a list of 2 to 8 non-empty strings.")
+            return None
+        forward = _button_number(entry.get("forward"))
+        back = _button_number(entry.get("back"))
+        if forward is None or back is None:
+            problems.append(f"{where}: forward and back must be button ids like cab_deck_btn_013.")
+            return None
+        control.update(positions=positions, forward=forward, back=back)
+        return control
+
+    number = _button_number(control["id"])
+    if number is None:
+        problems.append(f"{where}: id {control['id']!r} must look like cab_deck_btn_001.")
+        return None
+    control["number"] = number
+    return control
+
+
+def _button_number(button_id: Any) -> int | None:
+    match = BUTTON_ID_PATTERN.match(button_id) if isinstance(button_id, str) else None
+    if match is None or int(match.group(1)) < 1:
+        return None
+    return int(match.group(1))
+
+
+def _vjoy_numbers(control: dict[str, Any]) -> list[int]:
+    if control["type"] == "switch":
+        return [control["forward"], control["back"]]
+    return [control["number"]]
 
 
 def check_button_range(config: dict[str, Any], vjoy_buttons: int | None) -> None:
     if vjoy_buttons is None:
         return
-    too_high = [b["id"] for b in config["buttons_by_id"].values() if b["number"] > vjoy_buttons]
+    too_high = [
+        f"{control['id']} (button {number})"
+        for control in config["controls_by_id"].values()
+        for number in _vjoy_numbers(control)
+        if number > vjoy_buttons
+    ]
     if too_high:
         raise ConfigError(
             f"vJoy device has only {vjoy_buttons} buttons, but config uses {', '.join(too_high)}. "
@@ -246,6 +343,132 @@ def read_vjoy_button_count(device_id: int) -> int | None:
     return int(count) if count > 0 else None
 
 
+# --- Telemetry ---------------------------------------------------------------
+
+
+def no_telemetry() -> dict[str, Any] | None:
+    return None
+
+
+def open_telemetry() -> TelemetryReader:
+    """Return a reader that connects lazily and retries while the game is not running."""
+    try:
+        import truck_telemetry
+    except ImportError:
+        log.warning("truck-telemetry is not installed; panel will show no game state.")
+        return no_telemetry
+
+    status = {"ready": False, "next_try": 0.0, "reported": None}
+
+    def report(message: str) -> None:
+        if status["reported"] != message:
+            status["reported"] = message
+            log.info(message)
+
+    def read() -> dict[str, Any] | None:
+        now = time.monotonic()
+        if not status["ready"]:
+            if now < status["next_try"]:
+                return None
+            status["next_try"] = now + TELEMETRY_RETRY_S
+            try:
+                truck_telemetry.init()
+            except FileNotFoundError:
+                report("Telemetry not available: start the game with scs-telemetry.dll installed.")
+                return None
+            # The library raises a bare Exception for an unsupported plugin version.
+            except Exception as error:  # noqa: BLE001
+                report(f"Telemetry not available: {error}. Use scs-sdk-plugin V.1.12.1.")
+                return None
+            status["ready"] = True
+            report("Telemetry connected.")
+        try:
+            return truck_telemetry.get_data()
+        except (OSError, ValueError, struct.error) as error:
+            log.warning("Telemetry read failed, reconnecting: %r", error)
+            truck_telemetry.deinit()
+            status["ready"] = False
+            return None
+
+    return read
+
+
+def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """Map raw telemetry to panel indicators with level off / dim / on."""
+
+    def flag(value: Any) -> dict[str, str]:
+        return {"level": "on" if value else "off"}
+
+    def blinking(active: Any, phase: Any) -> dict[str, str]:
+        if not active:
+            return {"level": "off"}
+        return {"level": "on" if phase else "dim"}
+
+    if data.get("engineEnabled"):
+        engine = {"level": "on", "text": "Заведено"}
+    elif data.get("electricEnabled"):
+        engine = {"level": "dim", "text": "Запалювання"}
+    else:
+        engine = {"level": "off"}
+
+    if data.get("lightsBeamLow"):
+        lights = {"level": "on", "text": "Ближнє"}
+    elif data.get("lightsParking"):
+        lights = {"level": "dim", "text": "Габарити"}
+    else:
+        lights = {"level": "off"}
+
+    trailers = data.get("trailer") or [{}]
+    hazard_phase = data.get("blinkerLeftOn") or data.get("blinkerRightOn")
+    return {
+        "engine": engine,
+        "lights": lights,
+        "high_beam": flag(data.get("lightsBeamHigh")),
+        "blinker_left": blinking(data.get("blinkerLeftActive"), data.get("blinkerLeftOn")),
+        "blinker_right": blinking(data.get("blinkerRightActive"), data.get("blinkerRightOn")),
+        "hazards": blinking(data.get("lightsHazards"), hazard_phase),
+        "park_brake": flag(data.get("parkBrake")),
+        "wipers": flag(data.get("wipers")),
+        "trailer": flag(trailers[0].get("attached")),
+    }
+
+
+def update_from_telemetry(state: DeckState, data: dict[str, Any] | None) -> None:
+    if data is None:
+        state.game = {"telemetry": False}
+        state.indicators = {}
+        return
+    active = bool(data.get("sdkActive"))
+    state.game = {"telemetry": True, "active": active, "paused": bool(data.get("paused"))}
+    state.indicators = compute_indicators(data) if active else {}
+    correct_switches(state)
+
+
+def correct_switches(state: DeckState) -> None:
+    """Keep switch positions honest: position 0 must match a stopped indicator."""
+    now = time.monotonic()
+    for control in state.controls_by_id.values():
+        if control["type"] != "switch" or control["indicator"] not in state.indicators:
+            continue
+        switch = state.switches[control["id"]]
+        if switch.moving or now - switch.last_press < SWITCH_SETTLE_S:
+            continue
+        running = state.indicators[control["indicator"]]["level"] != "off"
+        if not running and switch.position != 0:
+            log.info("%s: game shows it off, correcting position %d -> 0", control["id"], switch.position)
+            switch.position = switch.target = 0
+        elif running and switch.position == 0:
+            log.info("%s: game shows it on, correcting position 0 -> 1", control["id"])
+            switch.position = switch.target = 1
+
+
+async def telemetry_loop(state: DeckState) -> None:
+    while True:
+        update_from_telemetry(state, state.read_telemetry())
+        await publish_state(state)
+        await asyncio.sleep(TELEMETRY_POLL_S)
+
+
 # --- Button state ------------------------------------------------------------
 
 
@@ -284,15 +507,66 @@ async def _release_later(state: DeckState, number: int, delay_s: float, warn: st
     release(state, number)
 
 
+# --- Switches ----------------------------------------------------------------
+
+
+def set_switch(state: DeckState, control: dict[str, Any], target: int) -> None:
+    switch = state.switches[control["id"]]
+    switch.target = target
+    if not switch.moving:
+        switch.task = asyncio.create_task(move_switch(state, control))
+
+
+async def move_switch(state: DeckState, control: dict[str, Any]) -> None:
+    """Step forward/back one press at a time until the switch reaches its target.
+
+    The target is re-read every step, so a new tap mid-move just changes direction.
+    """
+    switch = state.switches[control["id"]]
+    tap_s = state.config["tap_ms"] / 1000
+    gap_s = state.config["switch_gap_ms"] / 1000
+    while switch.position != switch.target:
+        forward = switch.target > switch.position
+        number = control["forward"] if forward else control["back"]
+        press(state, number)
+        try:
+            await asyncio.sleep(tap_s)
+        finally:
+            release(state, number)
+        switch.position += 1 if forward else -1
+        switch.last_press = time.monotonic()
+        log.info("%s -> %s", control["id"], control["positions"][switch.position])
+        await publish_state(state)
+        await asyncio.sleep(gap_s)
+
+
 # --- Protocol ----------------------------------------------------------------
 
 
 def layout_message(config: dict[str, Any]) -> dict[str, Any]:
-    buttons = [
-        {key: button[key] for key in ("id", "label", "icon", "color", "type")}
-        for button in config["buttons_by_id"].values()
+    keys = ("id", "type", "label", "icon", "color", "indicator", "positions")
+    controls = [
+        {key: control[key] for key in keys if key in control}
+        for control in config["controls_by_id"].values()
     ]
-    return {"type": "layout", "grid": config["grid"], "buttons": buttons}
+    return {"type": "layout", "grid": config["grid"], "buttons": controls}
+
+
+def state_message(state: DeckState) -> dict[str, Any]:
+    return {
+        "type": "state",
+        "game": state.game,
+        "indicators": state.indicators,
+        "switches": {switch_id: switch.position for switch_id, switch in state.switches.items()},
+    }
+
+
+async def publish_state(state: DeckState) -> None:
+    message = state_message(state)
+    if message == state.last_state_message:
+        return
+    state.last_state_message = message
+    await asyncio.gather(*(ws.send_json(message) for ws in list(state.sockets)), return_exceptions=True)
 
 
 def handle_message(state: DeckState, text: str, held: set[int]) -> dict[str, Any] | None:
@@ -313,16 +587,29 @@ def handle_message(state: DeckState, text: str, held: set[int]) -> dict[str, Any
         log.error("Panel error: %s", str(message.get("message", ""))[:MAX_LOGGED_TEXT])
         return None
 
-    button = state.buttons_by_id.get(message.get("id"))
+    control = state.controls_by_id.get(message.get("id"))
     event = message.get("event")
-    if button is None or event not in ("down", "up"):
+    if control is None:
         log.warning("Ignored unknown command: %s", text[:MAX_LOGGED_TEXT])
         return None
 
-    log.info("%s %s (%s, %s)", button["id"], event, button["label"], button["type"])
-    number = button["number"]
+    if control["type"] == "switch":
+        position = message.get("position")
+        if event != "set" or not _is_int_in(position, 0, len(control["positions"]) - 1):
+            log.warning("Ignored invalid switch command: %s", text[:MAX_LOGGED_TEXT])
+            return None
+        log.info("%s set %s (%s)", control["id"], control["positions"][position], control["label"])
+        set_switch(state, control, position)
+        return None
 
-    if button["type"] == "tap":
+    if event not in ("down", "up"):
+        log.warning("Ignored unknown command: %s", text[:MAX_LOGGED_TEXT])
+        return None
+
+    log.info("%s %s (%s, %s)", control["id"], event, control["label"], control["type"])
+    number = control["number"]
+
+    if control["type"] == "tap":
         if event == "down":
             press(state, number)
             schedule_release(state, number, state.config["tap_ms"] / 1000)
@@ -330,7 +617,7 @@ def handle_message(state: DeckState, text: str, held: set[int]) -> dict[str, Any
         press(state, number)
         held.add(number)
         timeout = state.config["hold_timeout_s"]
-        schedule_release(state, number, timeout, f"{button['id']} released by hold timeout ({timeout}s)")
+        schedule_release(state, number, timeout, f"{control['id']} released by hold timeout ({timeout}s)")
     else:
         release(state, number)
         held.discard(number)
@@ -343,7 +630,11 @@ def handle_message(state: DeckState, text: str, held: set[int]) -> dict[str, Any
 def create_app(state: DeckState) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        telemetry_task = asyncio.create_task(telemetry_loop(state))
         yield
+        telemetry_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await telemetry_task
         release_all(state)
         log.info("Server stopped, all buttons released.")
 
@@ -360,9 +651,12 @@ def create_app(state: DeckState) -> FastAPI:
             "input": state.input_mode,
             "vjoy_device": state.config["vjoy_device"],
             "vjoy_buttons": state.vjoy_buttons,
-            "config_buttons": len(state.buttons_by_id),
+            "controls": len(state.controls_by_id),
             "pressed": sorted(state.pressed),
-            "clients": state.clients,
+            "clients": len(state.sockets),
+            "game": state.game,
+            "indicators": state.indicators,
+            "switches": {switch_id: switch.position for switch_id, switch in state.switches.items()},
             "commit": state.commit,
             "uptime_s": round(time.monotonic() - state.started_at),
             "last_error": state.errors.last,
@@ -376,11 +670,12 @@ def create_app(state: DeckState) -> FastAPI:
     async def websocket_endpoint(websocket: WebSocket) -> None:
         await websocket.accept()
         client = f"{websocket.client.host}:{websocket.client.port}" if websocket.client else "unknown"
-        state.clients += 1
         held: set[int] = set()
-        log.info("Panel connected: %s (clients: %d)", client, state.clients)
+        state.sockets.add(websocket)
+        log.info("Panel connected: %s (clients: %d)", client, len(state.sockets))
         try:
             await websocket.send_json(layout_message(state.config))
+            await websocket.send_json(state_message(state))
             while True:
                 incoming = await websocket.receive()
                 if incoming["type"] == "websocket.disconnect":
@@ -393,11 +688,14 @@ def create_app(state: DeckState) -> FastAPI:
                 if reply is not None:
                     await websocket.send_json(reply)
         finally:
-            state.clients -= 1
+            state.sockets.discard(websocket)
             still_pressed = sorted(number for number in held if number in state.pressed)
             for number in still_pressed:
                 release(state, number)
-            log.info("Panel disconnected: %s, released %s (clients: %d)", client, still_pressed or "nothing", state.clients)
+            log.info(
+                "Panel disconnected: %s, released %s (clients: %d)",
+                client, still_pressed or "nothing", len(state.sockets),
+            )
 
     return app
 
@@ -459,8 +757,10 @@ def main() -> None:
         config = load_config(args.config)
         if args.dry_run:
             set_button, vjoy_buttons = open_dry_run()
+            read_telemetry = no_telemetry
         else:
             set_button, vjoy_buttons = open_vjoy(config["vjoy_device"])
+            read_telemetry = open_telemetry()
         check_button_range(config, vjoy_buttons)
     except (ConfigError, InputError) as error:
         log.error("Startup failed: %s", error)
@@ -469,13 +769,17 @@ def main() -> None:
     state = DeckState(
         config=config,
         set_button=set_button,
+        read_telemetry=read_telemetry,
         input_mode="dry-run" if args.dry_run else "vjoy",
         vjoy_buttons=vjoy_buttons,
         commit=commit,
         errors=errors,
     )
+    for control in config["controls_by_id"].values():
+        if control["type"] == "switch":
+            state.switches[control["id"]] = SwitchState()
 
-    log.info("Loaded %d buttons. vJoy buttons available: %s", len(state.buttons_by_id), vjoy_buttons or "unknown")
+    log.info("Loaded %d controls. vJoy buttons available: %s", len(state.controls_by_id), vjoy_buttons or "unknown")
     addresses = local_ipv4_addresses() or ["<this-pc-ip>"]
     print("\nOpen the panel on the tablet:")
     for address in addresses:

@@ -13,9 +13,11 @@
     --bg: #0f1216;
     --surface-top: #252b34;
     --surface: #1a1f26;
+    --segment: #12161b;
     --text: #e6e9ee;
     --muted: #7d8794;
     --ok: #3fb950;
+    --warn: #d29922;
     --bad: #f85149;
     --gap: 14px;
     --radius: 18px;
@@ -51,14 +53,16 @@
     font-size: 13px;
     color: var(--muted);
   }
-  #dot {
+  .dot {
     width: 10px;
     height: 10px;
     border-radius: 50%;
     background: var(--bad);
     box-shadow: 0 0 8px var(--bad);
   }
-  body.online #dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .dot.warn { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+  #game-dot { margin-left: 14px; }
   #grid {
     flex: 1;
     display: grid;
@@ -67,6 +71,7 @@
     min-height: 0;
   }
   body:not(.online) #grid { opacity: 0.35; }
+
   .btn {
     --c: #8b949e;
     position: relative;
@@ -76,11 +81,26 @@
     justify-content: center;
     gap: 6px;
     min-height: 0;
+    overflow: hidden;
     border-radius: var(--radius);
     background: linear-gradient(180deg, var(--surface-top), var(--surface));
     box-shadow: inset 0 -4px 0 var(--c), 0 3px 8px rgba(0, 0, 0, 0.45);
-    transition: transform 60ms, box-shadow 60ms, background 60ms;
+    transition: transform 60ms, box-shadow 120ms;
   }
+  /* Game state overlay: tinted with the button colour. */
+  .btn::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--c);
+    opacity: 0;
+    transition: opacity 120ms;
+    pointer-events: none;
+  }
+  .btn.lvl-dim::before { opacity: 0.14; }
+  .btn.lvl-on::before { opacity: 0.32; }
+  .btn.lvl-on { box-shadow: inset 0 0 0 2px var(--c), 0 0 20px var(--c); }
+  .btn > * { position: relative; }
   .btn .icon { font-size: clamp(28px, 7vh, 60px); line-height: 1; pointer-events: none; }
   .btn .label {
     font-size: clamp(13px, 2.6vh, 22px);
@@ -89,6 +109,13 @@
     padding: 0 8px;
     pointer-events: none;
   }
+  .btn .sub {
+    min-height: 1.2em;
+    font-size: clamp(11px, 1.8vh, 15px);
+    color: var(--muted);
+    pointer-events: none;
+  }
+  .btn.lvl-dim .sub, .btn.lvl-on .sub { color: var(--text); }
   .btn.hold { outline: 2px dashed rgba(255, 255, 255, 0.12); outline-offset: -8px; }
   .btn.hold::after {
     content: "утримуй";
@@ -101,12 +128,32 @@
     color: var(--muted);
   }
   .btn.active {
-    background: var(--c);
-    color: #0f1216;
     transform: translateY(3px);
     box-shadow: 0 0 22px var(--c);
   }
-  .btn.active::after { color: #0f1216; }
+  .btn.active::before { opacity: 0.85; }
+  .btn.active .label, .btn.active .sub { color: #0f1216; }
+
+  .btn.switch { justify-content: space-between; padding: 12px 10px 10px; gap: 4px; }
+  .btn.switch .head { display: flex; align-items: center; gap: 8px; pointer-events: none; }
+  .btn.switch .icon { font-size: clamp(22px, 4.5vh, 40px); }
+  .segments { display: flex; gap: 6px; width: 100%; flex: 1; max-height: 56%; }
+  .segment {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: var(--segment);
+    font-size: clamp(13px, 2.4vh, 20px);
+    font-weight: 700;
+    color: var(--muted);
+    transition: background 80ms, color 80ms;
+  }
+  .segment.current { background: var(--c); color: #0f1216; box-shadow: 0 0 12px var(--c); }
+  .segment.pending { outline: 2px solid var(--c); color: var(--text); }
+  .segment.pressed { transform: translateY(2px); }
+
   #rotate {
     display: none;
     position: fixed;
@@ -121,7 +168,10 @@
 </style>
 </head>
 <body>
-<div id="status"><span id="dot"></span><span id="status-text">Підключення…</span></div>
+<div id="status">
+  <span id="link-dot" class="dot"></span><span id="link-text">Підключення…</span>
+  <span id="game-dot" class="dot"></span><span id="game-text">Гра: немає даних</span>
+</div>
 <div id="grid"></div>
 <div id="rotate">Поверни планшет горизонтально</div>
 <script>
@@ -133,7 +183,10 @@
   const MAX_QUEUED_ERRORS = 20;
 
   const grid = document.getElementById("grid");
-  const statusText = document.getElementById("status-text");
+  const linkDot = document.getElementById("link-dot");
+  const linkText = document.getElementById("link-text");
+  const gameDot = document.getElementById("game-dot");
+  const gameText = document.getElementById("game-text");
   const activePointers = new Map(); // pointerId -> button element
   const queuedErrors = [];
 
@@ -167,6 +220,7 @@
     try { ws.close(); } catch (_) { /* already closed */ }
     releaseAllLocal(false);
     setOnline(false);
+    applyState({ game: { telemetry: false }, indicators: {}, switches: {} });
     if (reconnectTimer === null) {
       reconnectTimer = setTimeout(connect, reconnectDelay);
       reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
@@ -183,13 +237,15 @@
 
   function setOnline(online) {
     document.body.classList.toggle("online", online);
-    statusText.textContent = online ? "Підключено" : "Перепідключення…";
+    linkDot.className = online ? "dot ok" : "dot";
+    linkText.textContent = online ? "Підключено" : "Перепідключення…";
   }
 
   function handleMessage(data) {
     const message = JSON.parse(data);
     if (message.type === "pong") lastPong = Date.now();
     else if (message.type === "layout") renderLayout(message);
+    else if (message.type === "state") applyState(message);
   }
 
   setInterval(() => {
@@ -206,26 +262,78 @@
   function renderLayout(layout) {
     grid.style.gridTemplateColumns = `repeat(${layout.grid.cols}, 1fr)`;
     grid.style.gridTemplateRows = `repeat(${layout.grid.rows}, 1fr)`;
-    grid.replaceChildren(...layout.buttons.map(createButton));
+    grid.replaceChildren(...layout.buttons.map(createControl));
   }
 
-  function createButton(config) {
-    const button = document.createElement("div");
-    button.className = `btn ${config.type}`;
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function createControl(config) {
+    const button = el("div", `btn ${config.type}`);
     button.dataset.id = config.id;
     button.dataset.type = config.type;
+    if (config.indicator) button.dataset.indicator = config.indicator;
     button.style.setProperty("--c", config.color);
     button.setAttribute("role", "button");
 
-    const icon = document.createElement("span");
-    icon.className = "icon";
-    icon.textContent = config.icon;
-    const label = document.createElement("span");
-    label.className = "label";
-    label.textContent = config.label;
+    if (config.type === "switch") {
+      const head = el("div", "head");
+      head.append(el("span", "icon", config.icon), el("span", "label", config.label));
+      const segments = el("div", "segments");
+      config.positions.forEach((name, index) => {
+        const segment = el("div", "segment", name);
+        segment.dataset.position = String(index);
+        segments.append(segment);
+      });
+      button.append(head, segments);
+      return button;
+    }
 
-    button.append(icon, label);
+    button.append(el("span", "icon", config.icon), el("span", "label", config.label), el("span", "sub", ""));
     return button;
+  }
+
+  // --- Game state ---------------------------------------------------------
+
+  function applyState(state) {
+    const game = state.game || {};
+    if (!game.telemetry) {
+      gameDot.className = "dot";
+      gameText.textContent = "Гра: немає телеметрії";
+    } else if (!game.active) {
+      gameDot.className = "dot warn";
+      gameText.textContent = "Гра: не запущена";
+    } else if (game.paused) {
+      gameDot.className = "dot warn";
+      gameText.textContent = "Гра: пауза";
+    } else {
+      gameDot.className = "dot ok";
+      gameText.textContent = "Гра: в кабіні";
+    }
+
+    const indicators = state.indicators || {};
+    for (const button of grid.querySelectorAll(".btn[data-indicator]")) {
+      const indicator = indicators[button.dataset.indicator];
+      const level = indicator ? indicator.level : "none";
+      button.classList.toggle("lvl-dim", level === "dim");
+      button.classList.toggle("lvl-on", level === "on");
+      const sub = button.querySelector(".sub");
+      if (sub) sub.textContent = indicator && indicator.text ? indicator.text : "";
+    }
+
+    const switches = state.switches || {};
+    for (const button of grid.querySelectorAll(".btn.switch")) {
+      const position = switches[button.dataset.id];
+      for (const segment of button.querySelectorAll(".segment")) {
+        const isCurrent = Number(segment.dataset.position) === position;
+        segment.classList.toggle("current", isCurrent);
+        if (isCurrent) segment.classList.remove("pending");
+      }
+    }
   }
 
   // --- Touch --------------------------------------------------------------
@@ -236,10 +344,26 @@
     return count;
   }
 
+  function tapSegment(segment) {
+    const button = segment.closest(".btn");
+    for (const other of button.querySelectorAll(".segment")) other.classList.remove("pending");
+    if (!segment.classList.contains("current")) segment.classList.add("pending");
+    segment.classList.add("pressed");
+    setTimeout(() => segment.classList.remove("pressed"), TAP_FLASH_MS);
+    send({ id: button.dataset.id, event: "set", position: Number(segment.dataset.position) });
+  }
+
   grid.addEventListener("pointerdown", (event) => {
     const button = event.target.closest(".btn");
     if (!button || !isOnline()) return;
     event.preventDefault();
+
+    if (button.dataset.type === "switch") {
+      const segment = event.target.closest(".segment");
+      if (segment) tapSegment(segment);
+      return;
+    }
+
     button.setPointerCapture(event.pointerId);
     const alreadyPressed = pointersOn(button) > 0;
     activePointers.set(event.pointerId, button);
