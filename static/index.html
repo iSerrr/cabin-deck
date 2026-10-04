@@ -32,6 +32,30 @@
   }
   @keyframes beaconSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
+  /* Console finishes (v7): dark green in the truck's colour, walnut, or the original v6 graphite.
+     Only surfaces and legend colour change; layout, sizes and states stay the same. */
+  :root, [data-finish="graphite"] {
+    --panel-bg: radial-gradient(ellipse at 50% 0%, #15181C, #0E1013 60%, #0B0C0F);
+    --console: #15171A;
+    --key: linear-gradient(180deg, #24272D, #1A1C20);
+    --key-pressed: linear-gradient(180deg, #2B2F36, #23262C);
+    --legend: #C9CDD3;
+  }
+  [data-finish="green"] {
+    --panel-bg: radial-gradient(ellipse at 50% 0%, #102119, #0A140F 60%, #070C09);
+    --console: radial-gradient(ellipse at 50% 0%, rgba(255,255,255,.09), transparent 55%), linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.35)), repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 1px, transparent 1px 4px), linear-gradient(180deg, #153126, #0E241B 60%, #0A1B14);
+    --key: linear-gradient(180deg, #2e2f33 0%, #1f2023 45%, #131416 50%, #262729 100%);
+    --key-pressed: linear-gradient(180deg, #1c1d1f 0%, #2a2b2e 45%, #151618 50%, #232427 100%);
+    --legend: #E4DCC4;
+  }
+  [data-finish="walnut"] {
+    --panel-bg: radial-gradient(ellipse at 50% 0%, #1E140E, #120C08 60%, #0B0805);
+    --console: linear-gradient(180deg, rgba(255,255,255,.06), transparent 30%, rgba(0,0,0,.25)), repeating-linear-gradient(94deg, #3a1f14 0 3px, #4a2a1a 3px 7px, #2c160e 7px 9px, #5a3520 9px 14px), #3a1f14;
+    --key: linear-gradient(180deg, #2e2f33 0%, #1f2023 45%, #131416 50%, #262729 100%);
+    --key-pressed: linear-gradient(180deg, #1c1d1f 0%, #2a2b2e 45%, #151618 50%, #232427 100%);
+    --legend: #F0E2C8;
+  }
+
   #stage { position: fixed; inset: 0; overflow: hidden; background: #08090B; }
   #panel {
     position: absolute;
@@ -40,7 +64,7 @@
     width: var(--panel-w, 1194px);
     height: var(--panel-h, 834px);
     transform: translate(-50%, -50%) scale(var(--scale, 1));
-    background: radial-gradient(ellipse at 50% 0%, #15181C, #0E1013 60%, #0B0C0F);
+    background: var(--panel-bg);
     padding: 14px;
     display: flex;
     flex-direction: column;
@@ -125,7 +149,7 @@
     grid-template-rows: 24px repeat(3, minmax(0, 1fr));
     grid-template-columns: 1fr 1fr;
     gap: 12px;
-    background: #15171A;
+    background: var(--console);
     box-shadow: inset 0 2px 8px rgba(0,0,0,.7), inset 0 0 0 1px rgba(0,0,0,.6);
   }
   .zone-in.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -160,7 +184,7 @@
   }
   .tile > * { pointer-events: none; }
   .bar { position: absolute; left: 0; right: 0; top: 0; height: 3px; }
-  .lbl { font-size: 18px; font-weight: 600; letter-spacing: .06em; color: #C9CDD3; text-align: center; line-height: 1.1; }
+  .lbl { font-size: 18px; font-weight: 600; letter-spacing: .06em; color: var(--legend); text-align: center; line-height: 1.1; }
   .st { font-size: 13px; font-weight: 600; letter-spacing: .06em; }
   .hint { font-size: 12px; font-weight: 600; letter-spacing: .14em; color: #6B717A; }
 
@@ -208,10 +232,14 @@
   .bind { align-items: flex-start; justify-content: center; gap: 2px; padding: 8px 12px; }
   .bind .num { font-size: 22px; font-weight: 700; letter-spacing: .04em; color: #E6E8EA; font-variant-numeric: tabular-nums; }
   .bind .game { font-size: 12px; font-weight: 600; letter-spacing: .06em; color: #6B717A; }
-  .bind .what { font-size: 15px; font-weight: 700; letter-spacing: .06em; color: #C9CDD3; }
+  .bind .what { font-size: 15px; font-weight: 700; letter-spacing: .06em; color: var(--legend); }
   .bind .act { font-size: 12px; font-weight: 600; color: #8B9199; }
   .setup-foot { display: flex; align-items: center; gap: 18px; }
-  .setup-foot .hint { flex: 1; letter-spacing: .06em; }
+  .setup-foot .hint { letter-spacing: .06em; }
+  .setup-foot > .hint { flex: 1; }
+  .finish { display: flex; align-items: center; gap: 8px; }
+  .finish .tile { width: 96px; height: 52px; flex: none; gap: 0; }
+  .finish .tile .hint { color: var(--legend); }
   .slider { display: flex; align-items: center; gap: 10px; }
   .slider input { width: 200px; accent-color: #E8A13A; }
   .back-btn { width: 180px; height: 56px; flex: none; flex-direction: row; gap: 10px; }
@@ -280,7 +308,8 @@
   const FS_HIDE_MS = 3000;
   const SWIPE_MIN_PX = 60;
   const MAX_QUEUED_ERRORS = 20;
-  const STORAGE = { sound: "cabDeckSound", bright: "cabDeckBright" };
+  const STORAGE = { sound: "cabDeckSound", bright: "cabDeckBright", finish: "cabDeckFinish" };
+  const FINISHES = ["green", "walnut", "graphite"];
 
   // Vibration patterns in ms. Works on Android browsers; iPad has no vibration hardware.
   const HAPTIC = { tap: 12, hold: 25, button: 12, detent: 10, tick: 6, ui: 6, linkLost: [40, 60, 40] };
@@ -323,6 +352,7 @@
     activateFlash: false,
     sound: readStored(STORAGE.sound, typeof navigator.vibrate !== "function") === true,
     bright: Number(readStored(STORAGE.bright, 1)) || 1,
+    finish: FINISHES.includes(readStored(STORAGE.finish, "green")) ? readStored(STORAGE.finish, "green") : "green",
     setupOpen: false,
   };
 
@@ -423,9 +453,9 @@
     if (on) shadow += `, inset 0 0 0 1.5px ${mix(color, 70)}, 0 0 36px -2px ${mix(color, 35)}, inset 0 0 50px ${mix(color, 7)}`;
     else if (dim) shadow += `, inset 0 0 0 1.5px ${mix(color, 35)}`;
     if (pressed) shadow = "inset 0 3px 10px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.22), 0 2px 4px rgba(0,0,0,.5)" + (on ? `, 0 0 36px -2px ${mix(color, 35)}` : "");
-    tile.style.background = pressed ? "linear-gradient(180deg,#2B2F36,#23262C)" : "linear-gradient(180deg,#24272D,#1A1C20)";
+    tile.style.background = pressed ? "var(--key-pressed)" : "var(--key)";
     tile.style.boxShadow = shadow;
-    tile.style.transform = pressed ? "translateY(2px) scale(.985)" : "none";
+    tile.style.transform = pressed ? "perspective(600px) rotateX(7deg) scale(.985)" : "none";
     if (bar) {
       bar.style.background = on ? color : dim ? mix(color, 45) : "#2A2E34";
       bar.style.boxShadow = on ? `0 0 10px ${color}` : "none";
@@ -556,7 +586,7 @@
     });
     const lights = h("div", { class: "well span" },
       h("div", { style: "display:flex;align-items:center;justify-content:space-between;padding:0 8px;height:22px" },
-        h("div", { style: "font-size:18px;font-weight:600;letter-spacing:.08em;color:#C9CDD3" }, "LIGHTS"), status),
+        h("div", { style: "font-size:18px;font-weight:600;letter-spacing:.08em;color:var(--legend)" }, "LIGHTS"), status),
       segmentedSwitch({ id: "lights", labels: ["OFF", "PARK", "LOW"], size: 20, current: () => switchPosition("lights") }));
     return zone("LIGHTS & SIGNALS", "",
       lights,
@@ -613,7 +643,7 @@
     const state = h("div", { class: "st", style: "letter-spacing:.04em" });
     tile.append(
       h("div", { style: "display:flex;align-items:center;align-self:stretch;justify-content:space-between" },
-        h("div", { style: "font-size:14px;font-weight:600;letter-spacing:.02em;color:#C9CDD3;line-height:1.05" }, spec.l1, h("br"), spec.l2),
+        h("div", { style: "font-size:14px;font-weight:600;letter-spacing:.02em;color:var(--legend);line-height:1.05" }, spec.l1, h("br"), spec.l2),
         lamp.ring),
       knob, state);
     updaters.push(() => {
@@ -664,7 +694,7 @@
     return h("div", { class: "well span", style: "display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:6px;padding:6px" },
       h("div", { style: "position:relative;width:112px;height:112px;border-radius:50%;padding:4px;background:linear-gradient(160deg,#f2f1ec,#8f8a80 40%,#2e2c29 60%,#c9c5bc);box-shadow:0 1px 0 rgba(255,255,255,.1),0 10px 18px -6px rgba(0,0,0,.9),0 2px 3px rgba(0,0,0,.6)" }, face),
       h("div", { style: "display:flex;flex-direction:column;gap:6px;min-width:0" },
-        h("div", { style: "font-size:13px;font-weight:600;letter-spacing:.02em;color:#C9CDD3;line-height:1.05" }, "AIR", h("br"), "PRESSURE"),
+        h("div", { style: "font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--legend);line-height:1.05" }, "AIR", h("br"), "PRESSURE"),
         digits,
         h("div", { style: "display:flex;align-items:center;gap:6px" }, lamp.ring, lampText),
         state));
@@ -691,7 +721,7 @@
     const bezel = h("div", { style: "flex:none;width:100px;height:100px;padding:7px;border-radius:50%;background:linear-gradient(160deg,#f2f1ec,#8f8a80 40%,#2e2c29 60%,#c9c5bc)" },
       h("div", { style: "width:100%;height:100%;border-radius:50%;background:radial-gradient(circle,#0a0a09,#23221f);box-shadow:inset 0 4px 10px rgba(0,0,0,.95);display:flex;align-items:center;justify-content:center" }, button));
     tile.append(bezel, h("div", { style: "display:flex;flex-direction:column;gap:4px;min-width:0" },
-      h("div", { style: "font-size:17px;font-weight:600;letter-spacing:.06em;color:#C9CDD3" }, "ACTIVATE"),
+      h("div", { style: "font-size:17px;font-weight:600;letter-spacing:.06em;color:var(--legend)" }, "ACTIVATE"),
       h("div", { style: "font-size:11px;font-weight:600;letter-spacing:.04em;color:#6B717A;line-height:1.3" }, "GATES · FUEL", h("br"), "SCALES · CARGO")));
     updaters.push(() => {
       const pressed = model.pressed.has(ctl), flash = model.activateFlash;
@@ -745,7 +775,7 @@
     const { tile, bar } = tileNode(ctl, "hold", "span", "flex-direction:row;gap:22px");
     const glyph = icon(ICON.horn, 84, "0 0 64 64", { strokeWidth: 3.4 });
     tile.append(glyph, h("div", { style: "display:flex;flex-direction:column;gap:4px" },
-      h("div", { style: "font-size:24px;font-weight:600;letter-spacing:.12em;color:#C9CDD3" }, "HORN"),
+      h("div", { style: "font-size:24px;font-weight:600;letter-spacing:.12em;color:var(--legend)" }, "HORN"),
       h("div", { class: "hint", style: "font-size:13px" }, "HOLD")));
     updaters.push(() => {
       const pressed = model.pressed.has(ctl);
@@ -866,7 +896,7 @@
       render();
     });
     const back = tileNode("setup:back", "ui", "back-btn");
-    back.tile.append(icon("M15 18l-6-6 6-6", 22, "0 0 24 24", { strokeWidth: 2.6, style: "stroke:#C9CDD3" }), h("div", { class: "lbl" }, "BACK"));
+    back.tile.append(icon("M15 18l-6-6 6-6", 22, "0 0 24 24", { strokeWidth: 2.6, style: "stroke:var(--legend)" }), h("div", { class: "lbl" }, "BACK"));
     updaters.push(() => applyTile(back.tile, back.bar, AMB, "off", model.pressed.has("setup:back")));
     setup.replaceChildren(h("div", { class: "zone" }, h("div", { class: "zone-in" },
       h("div", { class: "span title-row" }, h("div", { class: "zone-title" }, "SETUP · BIND CONTROLS"),
@@ -874,8 +904,24 @@
       ...tiles,
       h("div", { class: "span setup-foot" },
         h("div", { class: "slider" }, h("div", { class: "hint" }, "BACKLIGHT"), slider),
-        h("div", { class: "hint" }, "In the game: Options → Controls → pick an action → tap its tile here."),
+        h("div", { class: "finish" }, h("div", { class: "hint" }, "CONSOLE"), ...finishButtons()),
+        h("div", { class: "hint" }, "Game: Options → Controls → pick an action → tap its tile."),
         back.tile))));
+  }
+
+  function finishButtons() {
+    return FINISHES.map((finish) => {
+      const key = `finish:${finish}`;
+      const { tile, bar } = tileNode(key, "ui");
+      tile.dataset.finish = finish;
+      tile.append(h("div", { class: "hint" }, finish.toUpperCase()));
+      updaters.push(() => applyTile(tile, bar, AMB, model.finish === finish ? "on" : "off", model.pressed.has(key)));
+      return tile;
+    });
+  }
+
+  function applyFinish() {
+    document.documentElement.dataset.finish = model.finish;
   }
 
   function setSetupOpen(open) {
@@ -1148,6 +1194,12 @@
     if (kind === "ui") {
       activePointers.set(event.pointerId, { key: ctl, kind });
       model.pressed.add(ctl);
+      if (tile.dataset.finish) {
+        model.finish = tile.dataset.finish;
+        writeStored(STORAGE.finish, model.finish);
+        applyFinish();
+        click("ui");
+      }
       render();
       return;
     }
@@ -1296,6 +1348,7 @@
 
   // --- Start --------------------------------------------------------------
 
+  applyFinish();
   buildPlate();
   buildDash();
   fit();
