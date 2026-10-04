@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f1216">
+<title>Cab Deck</title>
+<style>
+  :root {
+    --bg: #0f1216;
+    --surface-top: #252b34;
+    --surface: #1a1f26;
+    --text: #e6e9ee;
+    --muted: #7d8794;
+    --ok: #3fb950;
+    --bad: #f85149;
+    --gap: 14px;
+    --radius: 18px;
+  }
+  * {
+    box-sizing: border-box;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  #status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px var(--gap);
+    font-size: 13px;
+    color: var(--muted);
+  }
+  #dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--bad);
+    box-shadow: 0 0 8px var(--bad);
+  }
+  body.online #dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  #grid {
+    flex: 1;
+    display: grid;
+    gap: var(--gap);
+    padding: 0 var(--gap) var(--gap);
+    min-height: 0;
+  }
+  body:not(.online) #grid { opacity: 0.35; }
+  .btn {
+    --c: #8b949e;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 0;
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--surface-top), var(--surface));
+    box-shadow: inset 0 -4px 0 var(--c), 0 3px 8px rgba(0, 0, 0, 0.45);
+    transition: transform 60ms, box-shadow 60ms, background 60ms;
+  }
+  .btn .icon { font-size: clamp(28px, 7vh, 60px); line-height: 1; pointer-events: none; }
+  .btn .label {
+    font-size: clamp(13px, 2.6vh, 22px);
+    font-weight: 600;
+    text-align: center;
+    padding: 0 8px;
+    pointer-events: none;
+  }
+  .btn.hold { outline: 2px dashed rgba(255, 255, 255, 0.12); outline-offset: -8px; }
+  .btn.hold::after {
+    content: "утримуй";
+    position: absolute;
+    top: 10px;
+    right: 14px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .btn.active {
+    background: var(--c);
+    color: #0f1216;
+    transform: translateY(3px);
+    box-shadow: 0 0 22px var(--c);
+  }
+  .btn.active::after { color: #0f1216; }
+  #rotate {
+    display: none;
+    position: fixed;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    font-size: 20px;
+    color: var(--muted);
+  }
+  @media (orientation: portrait) { #rotate { display: flex; } }
+</style>
+</head>
+<body>
+<div id="status"><span id="dot"></span><span id="status-text">Підключення…</span></div>
+<div id="grid"></div>
+<div id="rotate">Поверни планшет горизонтально</div>
+<script>
+  const PING_INTERVAL_MS = 2000;
+  const PONG_TIMEOUT_MS = 5000;
+  const RECONNECT_MIN_MS = 500;
+  const RECONNECT_MAX_MS = 5000;
+  const TAP_FLASH_MS = 120;
+  const MAX_QUEUED_ERRORS = 20;
+
+  const grid = document.getElementById("grid");
+  const statusText = document.getElementById("status-text");
+  const activePointers = new Map(); // pointerId -> button element
+  const queuedErrors = [];
+
+  let socket = null;
+  let lastPong = 0;
+  let reconnectDelay = RECONNECT_MIN_MS;
+  let reconnectTimer = null;
+
+  // --- Connection ---------------------------------------------------------
+
+  function connect() {
+    reconnectTimer = null;
+    const scheme = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${scheme}://${location.host}/ws`);
+    socket = ws;
+    ws.onopen = () => {
+      lastPong = Date.now();
+      reconnectDelay = RECONNECT_MIN_MS;
+      setOnline(true);
+      flushErrors();
+    };
+    ws.onmessage = (event) => handleMessage(event.data);
+    ws.onclose = () => dropSocket(ws);
+    ws.onerror = () => dropSocket(ws);
+  }
+
+  function dropSocket(ws) {
+    if (socket !== ws) return;
+    socket = null;
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    try { ws.close(); } catch (_) { /* already closed */ }
+    releaseAllLocal(false);
+    setOnline(false);
+    if (reconnectTimer === null) {
+      reconnectTimer = setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
+    }
+  }
+
+  function isOnline() {
+    return socket !== null && socket.readyState === WebSocket.OPEN;
+  }
+
+  function send(message) {
+    if (isOnline()) socket.send(JSON.stringify(message));
+  }
+
+  function setOnline(online) {
+    document.body.classList.toggle("online", online);
+    statusText.textContent = online ? "Підключено" : "Перепідключення…";
+  }
+
+  function handleMessage(data) {
+    const message = JSON.parse(data);
+    if (message.type === "pong") lastPong = Date.now();
+    else if (message.type === "layout") renderLayout(message);
+  }
+
+  setInterval(() => {
+    if (!isOnline()) return;
+    if (Date.now() - lastPong > PONG_TIMEOUT_MS) {
+      dropSocket(socket);
+      return;
+    }
+    send({ type: "ping" });
+  }, PING_INTERVAL_MS);
+
+  // --- Layout -------------------------------------------------------------
+
+  function renderLayout(layout) {
+    grid.style.gridTemplateColumns = `repeat(${layout.grid.cols}, 1fr)`;
+    grid.style.gridTemplateRows = `repeat(${layout.grid.rows}, 1fr)`;
+    grid.replaceChildren(...layout.buttons.map(createButton));
+  }
+
+  function createButton(config) {
+    const button = document.createElement("div");
+    button.className = `btn ${config.type}`;
+    button.dataset.id = config.id;
+    button.dataset.type = config.type;
+    button.style.setProperty("--c", config.color);
+    button.setAttribute("role", "button");
+
+    const icon = document.createElement("span");
+    icon.className = "icon";
+    icon.textContent = config.icon;
+    const label = document.createElement("span");
+    label.className = "label";
+    label.textContent = config.label;
+
+    button.append(icon, label);
+    return button;
+  }
+
+  // --- Touch --------------------------------------------------------------
+
+  function pointersOn(button) {
+    let count = 0;
+    for (const target of activePointers.values()) if (target === button) count += 1;
+    return count;
+  }
+
+  grid.addEventListener("pointerdown", (event) => {
+    const button = event.target.closest(".btn");
+    if (!button || !isOnline()) return;
+    event.preventDefault();
+    button.setPointerCapture(event.pointerId);
+    const alreadyPressed = pointersOn(button) > 0;
+    activePointers.set(event.pointerId, button);
+    button.classList.add("active");
+    if (!alreadyPressed) send({ id: button.dataset.id, event: "down" });
+  });
+
+  function endPointer(event) {
+    const button = activePointers.get(event.pointerId);
+    if (!button) return;
+    activePointers.delete(event.pointerId);
+    if (pointersOn(button) > 0) return;
+    send({ id: button.dataset.id, event: "up" });
+    const delay = button.dataset.type === "tap" ? TAP_FLASH_MS : 0;
+    setTimeout(() => { if (pointersOn(button) === 0) button.classList.remove("active"); }, delay);
+  }
+
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
+    grid.addEventListener(type, endPointer);
+  }
+
+  function releaseAllLocal(notifyServer) {
+    const buttons = new Set(activePointers.values());
+    activePointers.clear();
+    for (const button of buttons) {
+      if (notifyServer) send({ id: button.dataset.id, event: "up" });
+      button.classList.remove("active");
+    }
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") releaseAllLocal(true);
+  });
+  window.addEventListener("pagehide", () => releaseAllLocal(true));
+  document.addEventListener("contextmenu", (event) => event.preventDefault());
+  document.addEventListener("gesturestart", (event) => event.preventDefault());
+
+  // --- Error reporting ----------------------------------------------------
+
+  function reportError(text) {
+    const message = String(text).slice(0, 1000);
+    if (isOnline()) send({ type: "client_error", message });
+    else if (queuedErrors.length < MAX_QUEUED_ERRORS) queuedErrors.push(message);
+  }
+
+  function flushErrors() {
+    while (queuedErrors.length > 0) send({ type: "client_error", message: queuedErrors.shift() });
+  }
+
+  window.addEventListener("error", (event) => {
+    reportError(`${event.message} at ${event.filename}:${event.lineno}:${event.colno} | ${navigator.userAgent}`);
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    reportError(`Unhandled rejection: ${event.reason} | ${navigator.userAgent}`);
+  });
+
+  connect();
+</script>
+</body>
+</html>

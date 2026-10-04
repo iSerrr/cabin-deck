@@ -1,0 +1,20 @@
+{
+  "vjoy_device": 1,
+  "tap_ms": 80,
+  "hold_timeout_s": 10,
+  "grid": {"cols": 4, "rows": 3},
+  "buttons": [
+    {"id": "cab_deck_btn_001", "label": "Фари", "icon": "💡", "color": "#e3b341", "type": "tap"},
+    {"id": "cab_deck_btn_002", "label": "Дальнє світло", "icon": "🔦", "color": "#e3b341", "type": "tap"},
+    {"id": "cab_deck_btn_003", "label": "Лівий поворот", "icon": "⬅️", "color": "#e8833a", "type": "tap"},
+    {"id": "cab_deck_btn_004", "label": "Правий поворот", "icon": "➡️", "color": "#e8833a", "type": "tap"},
+    {"id": "cab_deck_btn_005", "label": "Аварійка", "icon": "⚠️", "color": "#e8833a", "type": "tap"},
+    {"id": "cab_deck_btn_006", "label": "Двірники", "icon": "🌧️", "color": "#5b8fd6", "type": "tap"},
+    {"id": "cab_deck_btn_007", "label": "Сигнал", "icon": "📯", "color": "#5b8fd6", "type": "hold"},
+    {"id": "cab_deck_btn_008", "label": "Двигун", "icon": "🔑", "color": "#5b8fd6", "type": "tap"},
+    {"id": "cab_deck_btn_009", "label": "Стоянкове гальмо", "icon": "🅿️", "color": "#d65b5b", "type": "tap"},
+    {"id": "cab_deck_btn_010", "label": "Причіп", "icon": "🔗", "color": "#d65b5b", "type": "tap"},
+    {"id": "cab_deck_btn_011", "label": "Вікно вниз", "icon": "⏬", "color": "#8b949e", "type": "hold"},
+    {"id": "cab_deck_btn_012", "label": "Вікно вгору", "icon": "⏫", "color": "#8b949e", "type": "hold"}
+  ]
+}

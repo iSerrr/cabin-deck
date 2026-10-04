@@ -1,0 +1,84 @@
+# Cab Deck
+
+Планшетна панель кнопок для Euro Truck Simulator 2. Python-сервер на ПК роздає сторінку з кнопками в домашній Wi-Fi мережі й натискає кнопки віртуального джойстика vJoy. Гра бачить vJoy як звичайний контролер.
+
+```
+Планшет (браузер) ──WebSocket──► server.py ──pyvjoy──► vJoy ──► ETS2
+```
+
+## Одноразове налаштування Windows-ПК
+
+1. **Git for Windows** і **Python 3.10+**. В інсталяторі Python постав галочку «Add python.exe to PATH».
+2. **vJoy**: реліз 2.1.9.1 з https://github.com/jshafer817/vJoy/releases. Якщо Windows 11 не приймає драйвер, бери https://github.com/BrunnerInnovation/vJoy/releases.
+3. **Configure vJoy**: пристрій 1, Enable vJoy, Number of Buttons = 32, Apply.
+4. **Клонувати проєкт**:
+   ```
+   git clone https://github.com/iSerrr/cabin-deck.git C:\cab-deck
+   ```
+5. **Брандмауер**: PowerShell від імені адміністратора:
+   ```
+   New-NetFirewallRule -DisplayName "Cab Deck 8000" -Direction Inbound -Protocol TCP -LocalPort 8000 -Profile Private -Action Allow
+   ```
+   Домашня Wi-Fi мережа в Windows має бути «Приватною» (Параметри → Мережа та Інтернет → Wi-Fi → властивості мережі).
+6. **Планшет**: вимкни автоблокування екрана. На iPad відкрий панель у Safari → «Поділитися» → «На початковий екран», щоб вона запускалась на весь екран.
+
+## Запуск
+
+Подвійний клік по `C:\cab-deck\run.bat`. Він підтягує свіжий код з GitHub, оновлює залежності й запускає сервер. Сервер друкує адресу панелі:
+
+```
+Open the panel on the tablet:
+  http://192.168.x.x:8000
+```
+
+Відкрий її на планшеті. Зелена крапка вгорі означає, що з'єднання є.
+
+## Призначення кнопок у грі
+
+1. Запусти сервер і відкрий панель на планшеті.
+2. У ETS2: Параметри → Керування. Вибери дію, натисни на призначення й торкнись потрібної кнопки на планшеті.
+3. ETS2 рахує кнопки джойстика з нуля, а vJoy з одиниці. Тому `cab_deck_btn_001` гра показує як Button 0, а `cab_deck_btn_007` — як Button 6.
+
+## Конфіг
+
+Розкладка в `config.json`. Нова кнопка — це новий рядок і перезапуск сервера:
+
+```json
+{"id": "cab_deck_btn_013", "label": "Ретардер", "icon": "🛑", "color": "#d65b5b", "type": "tap"}
+```
+
+- `id`: `cab_deck_btn_NNN`, де `NNN` — номер кнопки vJoy.
+- `type`: `tap` (коротке натискання на `tap_ms` мілісекунд) або `hold` (затиснута, поки палець на кнопці, але не довше `hold_timeout_s` секунд).
+
+Якщо конфіг зламаний, сервер не стартує й пише, що саме не так.
+
+## Розробка на Mac
+
+```
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python server.py --dry-run
+```
+
+У режимі `--dry-run` vJoy не потрібен: натискання лише пишуться в лог. Порт можна змінити через `--port 8077`.
+
+Цикл роботи: код і перевірка на Mac → `git push` → `run.bat` на Windows.
+
+## Діагностика
+
+Лог пише у `logs/cab_deck.log`, а також доступний по мережі:
+
+- `http://<ip-пк>:8000/api/health` — стан: режим вводу, кількість кнопок vJoy, затиснуті кнопки, підключені панелі, git-коміт, остання помилка.
+- `http://<ip-пк>:8000/api/logs?lines=200` — останні рядки логу.
+
+Помилки JavaScript з панелі на планшеті теж потрапляють у цей лог з позначкою `Panel error`.
+
+## Якщо щось не працює
+
+| Симптом | Що робити |
+| --- | --- |
+| `Cannot open vJoy device 1` | Перевір Enable vJoy у Configure vJoy. Якщо не допомогло, скопіюй `C:\Program Files\vJoy\x64\vJoyInterface.dll` у `.venv\Lib\site-packages\pyvjoy\utils\x64\` |
+| `vJoy device has only 8 buttons` | Збільш Number of Buttons у Configure vJoy |
+| Планшет не відкриває сторінку | Брандмауер (крок 5), мережа «Приватна», планшет у тій самій Wi-Fi |
+| `address already in use` | Сервер уже запущений в іншому вікні або порт зайнятий: `run.bat --port 8001` |
+| Червона крапка на панелі | Сервер зупинився або зник Wi-Fi. Панель перепідключиться сама |
