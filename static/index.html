@@ -40,6 +40,7 @@
     --key: linear-gradient(180deg, #24272D, #1A1C20);
     --key-pressed: linear-gradient(180deg, #2B2F36, #23262C);
     --legend: #C9CDD3;
+    --track: linear-gradient(180deg, #0A0B0D, #121417);
   }
   [data-finish="green"] {
     --panel-bg: radial-gradient(ellipse at 50% 0%, #102119, #0A140F 60%, #070C09);
@@ -47,6 +48,7 @@
     --key: linear-gradient(180deg, #2e2f33 0%, #1f2023 45%, #131416 50%, #262729 100%);
     --key-pressed: linear-gradient(180deg, #1c1d1f 0%, #2a2b2e 45%, #151618 50%, #232427 100%);
     --legend: #E4DCC4;
+    --track: linear-gradient(180deg, #07100C, #0B1812);
   }
   [data-finish="walnut"] {
     --panel-bg: radial-gradient(ellipse at 50% 0%, #1E140E, #120C08 60%, #0B0805);
@@ -54,6 +56,7 @@
     --key: linear-gradient(180deg, #2e2f33 0%, #1f2023 45%, #131416 50%, #262729 100%);
     --key-pressed: linear-gradient(180deg, #1c1d1f 0%, #2a2b2e 45%, #151618 50%, #232427 100%);
     --legend: #F0E2C8;
+    --track: linear-gradient(180deg, #120B07, #1C120B);
   }
 
   #stage { position: fixed; inset: 0; overflow: hidden; background: #08090B; }
@@ -220,6 +223,53 @@
   }
   .seg > * { pointer-events: none; }
   .seg.hidden { display: none; }
+
+  /* Levers (v7): drag along detents or tap a position. Shown instead of segment buttons
+     when SETUP → SWITCHES is LEVER. */
+  .switch-wrap { flex: 1; min-height: 0; display: flex; }
+  .switch-wrap > * { flex: 1; }
+  [data-switch-style="lever"] .switch-wrap .segs { display: none; }
+  [data-switch-style="buttons"] .switch-wrap .lever { display: none; }
+  .lever {
+    position: relative;
+    min-height: 0;
+    border-radius: 8px;
+    background: var(--track);
+    box-shadow: inset 0 3px 8px rgba(0,0,0,.9), inset 0 0 0 1px #000;
+    cursor: grab;
+    touch-action: none;
+  }
+  .lever > * { position: absolute; pointer-events: none; }
+  .lever-mark { top: 4px; width: 96px; margin-left: -48px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .lever-mark .seg-label { letter-spacing: .06em; }
+  .lever-mark.hidden, .lever-tick.hidden { display: none; }
+  .lever-rail { left: var(--pad); right: var(--pad); bottom: 22px; height: 12px; border-radius: 6px; background: linear-gradient(180deg, #020403, #0a0f0c); box-shadow: inset 0 2px 4px rgba(0,0,0,.95), 0 1px 0 rgba(255,255,255,.05); }
+  .lever-fill { left: var(--pad); bottom: 22px; height: 12px; border-radius: 6px; background: linear-gradient(180deg, #F6C878, #D08A2A); box-shadow: 0 0 12px rgba(240,180,96,.7); }
+  .lever-tick { bottom: 14px; width: 2px; height: 28px; margin-left: -1px; background: rgba(228,220,196,.35); }
+  .lever-knob {
+    bottom: 2px;
+    width: 52px;
+    height: 52px;
+    margin-left: -26px;
+    border-radius: 50%;
+    background: linear-gradient(160deg, #f2f1ec, #8f8a80 40%, #2e2c29 60%, #c9c5bc);
+    box-shadow: 0 8px 14px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lever-knob::after {
+    content: "";
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 32%, #3A3D43, #1C1E22 65%, #101114), linear-gradient(#F0B460, #F0B460);
+    background-size: 100% 100%, 4px 16px;
+    background-position: center, center;
+    background-repeat: no-repeat;
+    box-shadow: inset 0 2px 3px rgba(255,255,255,.1), inset 0 -2px 4px rgba(0,0,0,.8);
+  }
+  .lever.settled .lever-knob, .lever.settled .lever-fill { transition: left .18s cubic-bezier(.3,1.2,.5,1), width .18s cubic-bezier(.3,1.2,.5,1); }
   .seg-bar { position: absolute; left: 16px; right: 16px; top: 7px; height: 4px; border-radius: 2px; }
   .seg-label { font-weight: 600; letter-spacing: .06em; }
   .seg-sub { font-size: 13px; font-weight: 600; letter-spacing: .1em; }
@@ -238,10 +288,10 @@
   .setup-foot .hint { letter-spacing: .06em; }
   .setup-foot > .hint { flex: 1; }
   .finish { display: flex; align-items: center; gap: 8px; }
-  .finish .tile { width: 96px; height: 52px; flex: none; gap: 0; }
+  .finish .tile { width: 88px; height: 52px; flex: none; gap: 0; }
   .finish .tile .hint { color: var(--legend); }
   .slider { display: flex; align-items: center; gap: 10px; }
-  .slider input { width: 200px; accent-color: #E8A13A; }
+  .slider input { width: 140px; accent-color: #E8A13A; }
   .back-btn { width: 180px; height: 56px; flex: none; flex-direction: row; gap: 10px; }
 
   #dimmer { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .3s; }
@@ -308,8 +358,10 @@
   const FS_HIDE_MS = 3000;
   const SWIPE_MIN_PX = 60;
   const MAX_QUEUED_ERRORS = 20;
-  const STORAGE = { sound: "cabDeckSound", bright: "cabDeckBright", finish: "cabDeckFinish" };
+  const STORAGE = { sound: "cabDeckSound", bright: "cabDeckBright", finish: "cabDeckFinish", switchStyle: "cabDeckSwitchStyle" };
   const FINISHES = ["green", "walnut", "graphite"];
+  const SWITCH_STYLES = ["lever", "buttons"];
+  const LEVER_PAD = 30; // px from the track edge to the first and last detent
 
   // Vibration patterns in ms. Works on Android browsers; iPad has no vibration hardware.
   const HAPTIC = { tap: 12, hold: 25, button: 12, detent: 10, tick: 6, ui: 6, linkLost: [40, 60, 40] };
@@ -353,6 +405,8 @@
     sound: readStored(STORAGE.sound, typeof navigator.vibrate !== "function") === true,
     bright: Number(readStored(STORAGE.bright, 1)) || 1,
     finish: FINISHES.includes(readStored(STORAGE.finish, "green")) ? readStored(STORAGE.finish, "green") : "green",
+    switchStyle: SWITCH_STYLES.includes(readStored(STORAGE.switchStyle, "lever")) ? readStored(STORAGE.switchStyle, "lever") : "lever",
+    drag: null,        // { id, frac, position } while a lever is being dragged
     setupOpen: false,
   };
 
@@ -564,6 +618,51 @@
     return row;
   }
 
+  function leverSwitch(spec) {
+    const lever = h("div", { class: "lever settled", "data-lever": spec.id, style: `--pad:${LEVER_PAD}px` });
+    const rail = h("div", { class: "lever-rail" });
+    const fill = h("div", { class: "lever-fill" });
+    const knob = h("div", { class: "lever-knob" });
+    const marks = spec.labels.map((label, position) => {
+      const text = h("div", { class: "seg-label", style: `font-size:${Math.min(spec.size, 22)}px` }, label);
+      const sub = h("div", { class: "seg-sub", style: "font-size:11px" }, spec.subs ? spec.subs[position] : "");
+      return { mark: h("div", { class: "lever-mark" }, text, spec.subs ? sub : null), tick: h("div", { class: "lever-tick" }), text, sub, position };
+    });
+    lever.append(rail, ...marks.map((m) => m.tick), fill, ...marks.map((m) => m.mark), knob);
+    lever.dataset.count = String(spec.labels.length);
+    const at = (frac) => `calc(${LEVER_PAD}px + (100% - ${2 * LEVER_PAD}px) * ${frac})`;
+    updaters.push(() => {
+      const limit = spec.limit ? spec.limit() : spec.labels.length - 1;
+      lever.dataset.limit = String(limit);
+      const current = spec.current();
+      const pending = model.pending[spec.id];
+      const drag = model.drag && model.drag.id === spec.id ? model.drag : null;
+      const shown = drag ? drag.position : pending !== undefined ? pending : current;
+      const frac = drag ? drag.frac : shown >= 0 ? shown / limit : 0;
+      lever.classList.toggle("settled", !drag);
+      for (const m of marks) {
+        const hidden = m.position > limit;
+        m.mark.classList.toggle("hidden", hidden);
+        m.tick.classList.toggle("hidden", hidden);
+        m.mark.style.left = m.tick.style.left = at(m.position / limit);
+        const active = m.position === shown;
+        const confirmed = active && !drag && pending === undefined;
+        m.text.style.color = confirmed ? AMB : active ? "#F0CF8A" : "rgba(228,220,196,.5)";
+        m.text.style.textShadow = confirmed ? `0 0 10px ${AMB}` : "none";
+        m.sub.style.color = active ? "#E4DCC4" : "rgba(228,220,196,.35)";
+      }
+      knob.style.left = at(frac);
+      knob.style.transform = drag ? "scale(1.08)" : "none";
+      fill.style.width = `calc((100% - ${2 * LEVER_PAD}px) * ${frac})`;
+      fill.style.opacity = shown > 0 || (drag && drag.frac > 0) ? "1" : "0";
+    });
+    return lever;
+  }
+
+  function switchControl(spec) {
+    return h("div", { class: "switch-wrap" }, segmentedSwitch(spec), leverSwitch(spec));
+  }
+
   function switchPosition(id) {
     const position = model.switches[id];
     return model.online && typeof position === "number" ? position : -1;
@@ -587,7 +686,7 @@
     const lights = h("div", { class: "well span" },
       h("div", { style: "display:flex;align-items:center;justify-content:space-between;padding:0 8px;height:22px" },
         h("div", { style: "font-size:18px;font-weight:600;letter-spacing:.08em;color:var(--legend)" }, "LIGHTS"), status),
-      segmentedSwitch({ id: "lights", labels: ["OFF", "PARK", "LOW"], size: 20, current: () => switchPosition("lights") }));
+      switchControl({ id: "lights", labels: ["OFF", "PARK", "LOW"], subs: ["", "MARKER", "BEAM"], size: 20, current: () => switchPosition("lights") }));
     return zone("LIGHTS & SIGNALS", "",
       lights,
       arrowTile("cab_deck_btn_003", "LEFT", ICON.arrowLeft, "blinker_left"),
@@ -828,10 +927,10 @@
     };
     return h("div", { class: "bottom-row" },
       stripZone("WIPERS", switchStatus("wipers", "SPEED"),
-        segmentedSwitch({ id: "wipers", labels: ["OFF", "1", "2", "3"], subs: ["", "INT", "LOW", "HIGH"], size: 28, current: () => switchPosition("wipers") }),
+        switchControl({ id: "wipers", labels: ["OFF", "1", "2", "3"], subs: ["", "INT", "LOW", "HIGH"], size: 28, current: () => switchPosition("wipers") }),
         wipersLamp),
       stripZone("RETARDER", switchStatus("retarder", "STAGE"),
-        segmentedSwitch({ id: "retarder", labels: ["OFF", "1", "2", "3", "4", "5"], subs: ["", "STAGE", "STAGE", "STAGE", "STAGE", "STAGE"], size: 28,
+        switchControl({ id: "retarder", labels: ["OFF", "1", "2", "3", "4", "5"], subs: ["", "STAGE", "STAGE", "STAGE", "STAGE", "STAGE"], size: 28,
           current: () => switchPosition("retarder"), limit: retarderLimit })));
   }
 
@@ -904,24 +1003,27 @@
       ...tiles,
       h("div", { class: "span setup-foot" },
         h("div", { class: "slider" }, h("div", { class: "hint" }, "BACKLIGHT"), slider),
-        h("div", { class: "finish" }, h("div", { class: "hint" }, "CONSOLE"), ...finishButtons()),
-        h("div", { class: "hint" }, "Game: Options → Controls → pick an action → tap its tile."),
+        h("div", { class: "finish" }, h("div", { class: "hint" }, "CONSOLE"), ...choiceButtons("finish", FINISHES)),
+        h("div", { class: "finish" }, h("div", { class: "hint" }, "SWITCHES"), ...choiceButtons("switchStyle", SWITCH_STYLES)),
+        h("div", { class: "hint" }),
         back.tile))));
   }
 
-  function finishButtons() {
-    return FINISHES.map((finish) => {
-      const key = `finish:${finish}`;
+  function choiceButtons(setting, options) {
+    return options.map((option) => {
+      const key = `${setting}:${option}`;
       const { tile, bar } = tileNode(key, "ui");
-      tile.dataset.finish = finish;
-      tile.append(h("div", { class: "hint" }, finish.toUpperCase()));
-      updaters.push(() => applyTile(tile, bar, AMB, model.finish === finish ? "on" : "off", model.pressed.has(key)));
+      tile.dataset.setting = setting;
+      tile.dataset.option = option;
+      tile.append(h("div", { class: "hint" }, option.toUpperCase()));
+      updaters.push(() => applyTile(tile, bar, AMB, model[setting] === option ? "on" : "off", model.pressed.has(key)));
       return tile;
     });
   }
 
   function applyFinish() {
     document.documentElement.dataset.finish = model.finish;
+    document.documentElement.dataset.switchStyle = model.switchStyle;
   }
 
   function setSetupOpen(open) {
@@ -1162,6 +1264,17 @@
       return;
     }
 
+    const lever = target.closest("[data-lever]");
+    if (lever) {
+      if (!isOnline()) return;
+      event.preventDefault();
+      try { lever.setPointerCapture(event.pointerId); } catch (_) { /* pointer already gone */ }
+      activePointers.set(event.pointerId, { key: `lever:${lever.dataset.lever}`, kind: "lever", lever });
+      model.drag = { id: lever.dataset.lever, frac: 0, position: -1 };
+      moveLever(lever, event.clientX);
+      return;
+    }
+
     const segment = target.closest("[data-switch]");
     const tile = target.closest("[data-ctl]");
     if (!segment && !tile) return;
@@ -1194,9 +1307,9 @@
     if (kind === "ui") {
       activePointers.set(event.pointerId, { key: ctl, kind });
       model.pressed.add(ctl);
-      if (tile.dataset.finish) {
-        model.finish = tile.dataset.finish;
-        writeStored(STORAGE.finish, model.finish);
+      if (tile.dataset.setting) {
+        model[tile.dataset.setting] = tile.dataset.option;
+        writeStored(STORAGE[tile.dataset.setting], tile.dataset.option);
         applyFinish();
         click("ui");
       }
@@ -1219,6 +1332,34 @@
     render();
   });
 
+  // --- Levers -------------------------------------------------------------
+
+  function moveLever(lever, clientX) {
+    // Pointer position -> fraction of the detent span; works under the panel's CSS scale.
+    const rect = lever.getBoundingClientRect();
+    const pad = LEVER_PAD * rect.width / lever.offsetWidth;
+    const limit = Number(lever.dataset.limit);
+    const frac = Math.max(0, Math.min(1, (clientX - rect.left - pad) / (rect.width - 2 * pad)));
+    const position = Math.round(frac * limit);
+    if (position !== model.drag.position) click("detent"); // one click per detent passed
+    model.drag = { id: lever.dataset.lever, frac, position };
+    render();
+  }
+
+  panel.addEventListener("pointermove", (event) => {
+    const entry = activePointers.get(event.pointerId);
+    if (entry && entry.kind === "lever" && model.drag) moveLever(entry.lever, event.clientX);
+  });
+
+  function releaseLever(commit) {
+    const drag = model.drag;
+    model.drag = null;
+    if (!drag || !commit || drag.position < 0) return;
+    if (drag.position !== model.switches[drag.id]) setPending(drag.id, drag.position);
+    else clearPending(drag.id);
+    send({ id: drag.id, event: "set", position: drag.position });
+  }
+
   function endPointer(event) {
     if (event.type === "pointerup") enterImmersive();
     if (plateSwipe) {
@@ -1231,6 +1372,12 @@
     const entry = activePointers.get(event.pointerId);
     if (!entry) return;
     activePointers.delete(event.pointerId);
+    if (entry.kind === "lever") {
+      // Only a finished drag sets the switch; a cancelled gesture leaves it where it was.
+      releaseLever(event.type === "pointerup");
+      render();
+      return;
+    }
     if (keyInUse(entry.key)) return;
     model.pressed.delete(entry.key);
     if (entry.ctl) {
@@ -1247,6 +1394,7 @@
   }
 
   function releaseAllLocal(notifyServer) {
+    model.drag = null;
     const entries = [...activePointers.values()];
     activePointers.clear();
     model.pressed.clear();
