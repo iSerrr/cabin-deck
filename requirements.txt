@@ -1,0 +1,3 @@
+fastapi
+uvicorn[standard]
+pyvjoy; sys_platform == "win32"
