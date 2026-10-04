@@ -67,7 +67,7 @@ INDICATORS = (
 )
 GAUGE_INDICATORS = ("air_pressure",)
 # Switches whose position the game reports exactly (instead of on/off only).
-POSITION_SOURCES = ("retarder",)
+POSITION_SOURCES = ("retarder", "lights")
 
 log = logging.getLogger("cab_deck")
 
@@ -191,41 +191,30 @@ def validate_config(raw: Any) -> dict[str, Any]:
     if not isinstance(config["hold_timeout_s"], (int, float)) or not 0 < config["hold_timeout_s"] <= 120:
         problems.append("hold_timeout_s must be a number from 0 to 120.")
 
-    raw_pages = raw.get("pages")
-    if not isinstance(raw_pages, list) or not raw_pages:
-        problems.append("pages must be a non-empty list.")
-        raw_pages = []
+    entries = raw.get("controls")
+    if not isinstance(entries, list) or not entries:
+        problems.append("controls must be a non-empty list.")
+        entries = []
 
-    pages: list[dict[str, Any]] = []
     controls_by_id: dict[str, dict[str, Any]] = {}
     used_numbers: dict[int, str] = {}
-    for page_index, raw_page in enumerate(raw_pages, start=1):
-        page = _validate_page(raw_page, f"pages[{page_index}]", problems)
-        if page is None:
+    for index, entry in enumerate(entries, start=1):
+        where = f"controls[{index}]"
+        control = _validate_control(entry, where, problems)
+        if control is None:
             continue
-        for index, entry in enumerate(raw_page.get("buttons") or [], start=1):
-            where = f"pages[{page_index}].buttons[{index}]"
-            control = _validate_control(entry, where, problems)
-            if control is None:
-                continue
-            if control["id"] in controls_by_id:
-                problems.append(f"{where}: duplicate id {control['id']}.")
-                continue
-            for number in _vjoy_numbers(control):
-                if number in used_numbers:
-                    problems.append(f"{where}: vJoy button {number} is already used by {used_numbers[number]}.")
-                used_numbers[number] = control["id"]
-            controls_by_id[control["id"]] = control
-            page["controls"].append(control["id"])
-        grid = page["grid"]
-        if len(page["controls"]) > grid["cols"] * grid["rows"]:
-            problems.append(f"pages[{page_index}]: {len(page['controls'])} controls do not fit into a {grid['cols']}x{grid['rows']} grid.")
-        pages.append(page)
+        if control["id"] in controls_by_id:
+            problems.append(f"{where}: duplicate id {control['id']}.")
+            continue
+        for number in _vjoy_numbers(control):
+            if number in used_numbers:
+                problems.append(f"{where}: vJoy button {number} is already used by {used_numbers[number]}.")
+            used_numbers[number] = control["id"]
+        controls_by_id[control["id"]] = control
 
     if problems:
         raise ConfigError("Invalid config.json:\n  - " + "\n  - ".join(problems))
 
-    config["pages"] = pages
     config["controls_by_id"] = controls_by_id
     config["bindings"] = build_bindings(controls_by_id)
     return config
@@ -237,7 +226,8 @@ def build_bindings(controls_by_id: dict[str, dict[str, Any]]) -> list[dict[str, 
     for control in controls_by_id.values():
         if control["type"] == "switch":
             bindings.append(_binding(control["forward"], control["label"], "forward", control["forward_action"]))
-            bindings.append(_binding(control["back"], control["label"], "back", control["back_action"]))
+            if control["back"] is not None:
+                bindings.append(_binding(control["back"], control["label"], "back", control["back_action"]))
         elif control["type"] in ("tap", "hold"):
             bindings.append(_binding(control["number"], control["label"], None, control["action"]))
     return sorted(bindings, key=lambda binding: binding["number"])
@@ -245,24 +235,6 @@ def build_bindings(controls_by_id: dict[str, dict[str, Any]]) -> list[dict[str, 
 
 def _binding(number: int, label: str, part: str | None, action: str | None) -> dict[str, Any]:
     return {"key": f"cab_deck_btn_{number:03d}", "number": number, "label": label, "part": part, "action": action}
-
-
-def _validate_page(raw_page: Any, where: str, problems: list[str]) -> dict[str, Any] | None:
-    if not isinstance(raw_page, dict):
-        problems.append(f"{where} must be an object.")
-        return None
-    label = raw_page.get("label")
-    grid = raw_page.get("grid")
-    buttons = raw_page.get("buttons")
-    if not isinstance(label, str) or not label.strip():
-        problems.append(f"{where}: label must be a non-empty string.")
-    if not isinstance(grid, dict) or not _is_int_in(grid.get("cols"), 1, 12) or not _is_int_in(grid.get("rows"), 1, 12):
-        problems.append(f'{where}: grid must look like {{"cols": 4, "rows": 3}}.')
-        return None
-    if not isinstance(buttons, list) or not buttons:
-        problems.append(f"{where}: buttons must be a non-empty list.")
-        return None
-    return {"label": label, "grid": {"cols": grid["cols"], "rows": grid["rows"]}, "controls": []}
 
 
 def _validate_control(entry: Any, where: str, problems: list[str]) -> dict[str, Any] | None:
@@ -284,8 +256,6 @@ def _validate_control(entry: Any, where: str, problems: list[str]) -> dict[str, 
         "id": entry.get("id"),
         "type": control_type,
         "label": entry.get("label", ""),
-        "icon": entry.get("icon", ""),
-        "color": entry.get("color", "#8b949e"),
         "indicator": indicator,
     }
 
@@ -317,13 +287,16 @@ def _validate_control(entry: Any, where: str, problems: list[str]) -> dict[str, 
         ):
             problems.append(f"{where}: positions must be a list of 2 to 8 non-empty strings.")
             return None
+        # A cyclic switch wraps from the last position to the first and only needs "forward".
+        cyclic = entry.get("cyclic", False) is True
         forward = _button_number(entry.get("forward"))
-        back = _button_number(entry.get("back"))
-        if forward is None or back is None:
-            problems.append(f"{where}: forward and back must be button ids like cab_deck_btn_013.")
+        back = None if cyclic else _button_number(entry.get("back"))
+        if forward is None or (back is None and not cyclic):
+            problems.append(f"{where}: forward (and back, unless cyclic) must be button ids like cab_deck_btn_013.")
             return None
         control.update(
             positions=positions,
+            cyclic=cyclic,
             forward=forward,
             back=back,
             forward_action=_optional_text(entry, "forward_action", where, problems),
@@ -357,7 +330,7 @@ def _button_number(button_id: Any) -> int | None:
 
 def _vjoy_numbers(control: dict[str, Any]) -> list[int]:
     if control["type"] == "switch":
-        return [control["forward"], control["back"]]
+        return [n for n in (control["forward"], control["back"]) if n is not None]
     if control["type"] == "gauge":
         return []
     return [control["number"]]
@@ -502,12 +475,13 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     else:
         engine = {"level": "off"}
 
+    # value is the light switch position: 0 off, 1 parking, 2 low beam.
     if data.get("lightsBeamLow"):
-        lights = {"level": "on", "text": "LOW"}
+        lights = {"level": "on", "text": "LOW", "value": 2}
     elif data.get("lightsParking"):
-        lights = {"level": "dim", "text": "PARK"}
+        lights = {"level": "dim", "text": "PARK", "value": 1}
     else:
-        lights = {"level": "off"}
+        lights = {"level": "off", "value": 0}
 
     retarder_value = int(data.get("retarderBrake") or 0)
     retarder = {
@@ -662,19 +636,24 @@ async def move_switch(state: DeckState, control: dict[str, Any]) -> None:
     """Step forward/back one press at a time until the switch reaches its target.
 
     The target is re-read every step, so a new tap mid-move just changes direction.
+    A cyclic switch only steps forward and wraps from the last position to the first.
     """
     switch = state.switches[control["id"]]
+    count = len(control["positions"])
     tap_s = state.config["tap_ms"] / 1000
     gap_s = state.config["switch_gap_ms"] / 1000
     while switch.position != switch.target:
-        forward = switch.target > switch.position
+        forward = control["cyclic"] or switch.target > switch.position
         number = control["forward"] if forward else control["back"]
         press(state, number)
         try:
             await asyncio.sleep(tap_s)
         finally:
             release(state, number)
-        switch.position += 1 if forward else -1
+        if control["cyclic"]:
+            switch.position = (switch.position + 1) % count
+        else:
+            switch.position += 1 if forward else -1
         switch.last_press = time.monotonic()
         log.info("%s -> %s", control["id"], control["positions"][switch.position])
         await publish_state(state)
@@ -685,20 +664,12 @@ async def move_switch(state: DeckState, control: dict[str, Any]) -> None:
 
 
 def layout_message(config: dict[str, Any]) -> dict[str, Any]:
-    keys = ("id", "type", "label", "icon", "color", "indicator", "positions", "min", "max")
-    controls_by_id = config["controls_by_id"]
-    pages = [
-        {
-            "label": page["label"],
-            "grid": page["grid"],
-            "buttons": [
-                {key: controls_by_id[control_id][key] for key in keys if key in controls_by_id[control_id]}
-                for control_id in page["controls"]
-            ],
-        }
-        for page in config["pages"]
+    keys = ("id", "type", "label", "indicator", "positions", "min", "max")
+    controls = [
+        {key: control[key] for key in keys if key in control}
+        for control in config["controls_by_id"].values()
     ]
-    return {"type": "layout", "pages": pages, "bindings": config["bindings"]}
+    return {"type": "layout", "controls": controls, "bindings": config["bindings"]}
 
 
 def state_message(state: DeckState) -> dict[str, Any]:
