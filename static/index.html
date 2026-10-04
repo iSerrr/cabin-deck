@@ -7,9 +7,12 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#08090B">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" href="/static/icon-192.png">
 <title>Cab Deck</title>
 <style>
-  /* Design: Cab Deck v6 "Peterbilt x Audi", single 1194x834 screen scaled to fit. */
+  /* Design: Cab Deck v6 "Peterbilt x Audi". Designed at 1194x834; scaled to the screen height
+     and stretched in width (or the other way round) so any aspect ratio is filled edge to edge. */
   * {
     box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
@@ -34,8 +37,8 @@
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 1194px;
-    height: 834px;
+    width: var(--panel-w, 1194px);
+    height: var(--panel-h, 834px);
     transform: translate(-50%, -50%) scale(var(--scale, 1));
     background: radial-gradient(ellipse at 50% 0%, #15181C, #0E1013 60%, #0B0C0F);
     padding: 14px;
@@ -105,8 +108,8 @@
   #dash { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; transition: opacity .4s; }
   #dash.offline { opacity: .28; pointer-events: none; }
   #panel.setup-open #dash { visibility: hidden; }
-  .main-row { flex: 1; min-height: 0; display: grid; grid-template-columns: 336px 233px 233px 327px; gap: 12px; }
-  .bottom-row { height: 162px; flex: none; display: grid; grid-template-columns: 430px 1fr; gap: 12px; }
+  .main-row { flex: 1; min-height: 0; display: grid; grid-template-columns: 336fr 233fr 233fr 327fr; gap: 12px; }
+  .bottom-row { height: 162px; flex: none; display: grid; grid-template-columns: 430fr 724fr; gap: 12px; }
   .zone {
     min-height: 0;
     padding: 3px;
@@ -985,8 +988,11 @@
   }, PHASE_MS);
 
   function fit() {
+    // Scale by the tighter side, then stretch the other side to fill the screen exactly.
     const scale = Math.min(window.innerWidth / PANEL_W, window.innerHeight / PANEL_H);
     panel.style.setProperty("--scale", String(scale));
+    panel.style.setProperty("--panel-w", `${Math.max(PANEL_W, window.innerWidth / scale)}px`);
+    panel.style.setProperty("--panel-h", `${Math.max(PANEL_H, window.innerHeight / scale)}px`);
   }
   window.addEventListener("resize", fit);
 
@@ -1162,6 +1168,7 @@
   });
 
   function endPointer(event) {
+    if (event.type === "pointerup") enterImmersive();
     if (plateSwipe) {
       const dx = event.clientX - plateSwipe.x;
       plateSwipe = null;
@@ -1225,7 +1232,37 @@
     fsHideTimer = setTimeout(() => fsButton.classList.remove("visible"), FS_HIDE_MS);
   }
 
+  function isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+
+  // The first tap makes the panel fullscreen and keeps the screen awake. Done on pointerup,
+  // which still counts as a user gesture, so it never interferes with the press itself.
+  let skipAutoFullscreen = false;
+  function enterImmersive() {
+    requestWakeLock();
+    if (!fsSupported || isFullscreen() || skipAutoFullscreen) return;
+    const root = document.documentElement;
+    const request = root.requestFullscreen || root.webkitRequestFullscreen;
+    try {
+      const result = request.call(root);
+      if (result && result.catch) result.catch(() => { /* refused; the hidden button still works */ });
+    } catch (_) { /* refused; the hidden button still works */ }
+  }
+
+  let wakeLock = null;
+  async function requestWakeLock() {
+    // Only available in a secure context (HTTPS or an installed app via the Chrome flag in README).
+    if (wakeLock || !("wakeLock" in navigator) || !window.isSecureContext) return;
+    try {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => { wakeLock = null; });
+    } catch (_) { wakeLock = null; }
+  }
+
   function toggleFullscreen() {
+    // Leaving fullscreen with the button means the user wants the browser back: stop auto re-entering.
+    skipAutoFullscreen = isFullscreen();
     const d = document;
     if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
     else (d.documentElement.requestFullscreen || d.documentElement.webkitRequestFullscreen).call(d.documentElement);

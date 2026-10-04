@@ -25,10 +25,12 @@ from typing import Any, AsyncIterator, Callable
 import uvicorn
 from fastapi import FastAPI, Query, WebSocket
 from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "config.json"
-INDEX_PATH = BASE_DIR / "static" / "index.html"
+STATIC_DIR = BASE_DIR / "static"
+INDEX_PATH = STATIC_DIR / "index.html"
 LOG_PATH = BASE_DIR / "logs" / "cab_deck.log"
 DEFAULT_PORT = 8000
 
@@ -776,6 +778,8 @@ def create_app(state: DeckState) -> FastAPI:
         log.info("Server stopped, all buttons released.")
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    # Manifest and icons for running the panel as a fullscreen home-screen app.
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/")
     async def index() -> FileResponse:
