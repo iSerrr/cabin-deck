@@ -38,6 +38,8 @@ CONTROL_TYPES = ("tap", "hold", "switch", "gauge")
 MAX_LOGGED_TEXT = 500
 MAX_LOG_LINES = 1000
 
+# Single press used by the SETUP page to bind a vJoy button in the game menu.
+BIND_PRESS_S = 0.15
 TELEMETRY_POLL_S = 0.1
 TELEMETRY_RETRY_S = 5.0
 # Telemetry needs a moment to reflect a press; skip corrections right after one.
@@ -225,7 +227,24 @@ def validate_config(raw: Any) -> dict[str, Any]:
 
     config["pages"] = pages
     config["controls_by_id"] = controls_by_id
+    config["bindings"] = build_bindings(controls_by_id)
     return config
+
+
+def build_bindings(controls_by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every vJoy button the config uses, for the SETUP page. Keyed by button id, never by raw number."""
+    bindings: list[dict[str, Any]] = []
+    for control in controls_by_id.values():
+        if control["type"] == "switch":
+            bindings.append(_binding(control["forward"], control["label"], "forward", control["forward_action"]))
+            bindings.append(_binding(control["back"], control["label"], "back", control["back_action"]))
+        elif control["type"] in ("tap", "hold"):
+            bindings.append(_binding(control["number"], control["label"], None, control["action"]))
+    return sorted(bindings, key=lambda binding: binding["number"])
+
+
+def _binding(number: int, label: str, part: str | None, action: str | None) -> dict[str, Any]:
+    return {"key": f"cab_deck_btn_{number:03d}", "number": number, "label": label, "part": part, "action": action}
 
 
 def _validate_page(raw_page: Any, where: str, problems: list[str]) -> dict[str, Any] | None:
@@ -303,7 +322,13 @@ def _validate_control(entry: Any, where: str, problems: list[str]) -> dict[str, 
         if forward is None or back is None:
             problems.append(f"{where}: forward and back must be button ids like cab_deck_btn_013.")
             return None
-        control.update(positions=positions, forward=forward, back=back)
+        control.update(
+            positions=positions,
+            forward=forward,
+            back=back,
+            forward_action=_optional_text(entry, "forward_action", where, problems),
+            back_action=_optional_text(entry, "back_action", where, problems),
+        )
         return control
 
     number = _button_number(control["id"])
@@ -311,7 +336,16 @@ def _validate_control(entry: Any, where: str, problems: list[str]) -> dict[str, 
         problems.append(f"{where}: id {control['id']!r} must look like cab_deck_btn_001.")
         return None
     control["number"] = number
+    control["action"] = _optional_text(entry, "action", where, problems)
     return control
+
+
+def _optional_text(entry: dict[str, Any], key: str, where: str, problems: list[str]) -> str | None:
+    value = entry.get(key)
+    if value is not None and (not isinstance(value, str) or not value.strip()):
+        problems.append(f"{where}: {key} must be a non-empty string.")
+        return None
+    return value
 
 
 def _button_number(button_id: Any) -> int | None:
@@ -664,7 +698,7 @@ def layout_message(config: dict[str, Any]) -> dict[str, Any]:
         }
         for page in config["pages"]
     ]
-    return {"type": "layout", "pages": pages}
+    return {"type": "layout", "pages": pages, "bindings": config["bindings"]}
 
 
 def state_message(state: DeckState) -> dict[str, Any]:
@@ -684,6 +718,20 @@ async def publish_state(state: DeckState) -> None:
     await asyncio.gather(*(ws.send_json(message) for ws in list(state.sockets)), return_exceptions=True)
 
 
+def bind_press(state: DeckState, key: Any, text: str) -> None:
+    """One plain press of a configured vJoy button, for binding it in the game's controls menu."""
+    binding = next((b for b in state.config["bindings"] if b["key"] == key), None)
+    if binding is None:
+        log.warning("Ignored unknown bind key: %s", text[:MAX_LOGGED_TEXT])
+        return
+    number = binding["number"]
+    if number in state.pressed:
+        return
+    log.info("SETUP press vJoy %d (game Button %d, %s %s)", number, number - 1, binding["label"], binding["part"] or "")
+    press(state, number)
+    schedule_release(state, number, BIND_PRESS_S)
+
+
 def handle_message(state: DeckState, text: str, held: set[int]) -> dict[str, Any] | None:
     """Apply one client message. Returns a reply to send back, if any."""
     try:
@@ -698,6 +746,9 @@ def handle_message(state: DeckState, text: str, held: set[int]) -> dict[str, Any
     message_type = message.get("type")
     if message_type == "ping":
         return {"type": "pong"}
+    if message_type == "bind":
+        bind_press(state, message.get("key"), text)
+        return None
     if message_type == "client_error":
         log.error("Panel error: %s", str(message.get("message", ""))[:MAX_LOGGED_TEXT])
         return None
