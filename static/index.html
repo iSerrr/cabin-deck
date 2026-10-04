@@ -63,14 +63,44 @@
   .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
   .dot.warn { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
   #game-dot { margin-left: 14px; }
-  #grid {
+  #pages { flex: 1; min-height: 0; display: flex; }
+  .page {
     flex: 1;
-    display: grid;
+    display: none;
     gap: var(--gap);
     padding: 0 var(--gap) var(--gap);
     min-height: 0;
   }
-  body:not(.online) #grid { opacity: 0.35; }
+  .page.shown { display: grid; }
+  body:not(.online) #pages { opacity: 0.35; }
+  #tabs {
+    display: flex;
+    gap: var(--gap);
+    padding: 0 var(--gap) var(--gap);
+  }
+  #tabs:empty, #tabs.single { display: none; }
+  .tab {
+    flex: 1;
+    padding: 12px 0;
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-align: center;
+  }
+  .tab.shown { background: var(--surface-top); color: var(--text); box-shadow: inset 0 -3px 0 var(--text); }
+
+  .btn.gauge { gap: 4px; }
+  .gauge .value { font-size: clamp(30px, 7vh, 58px); font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none; }
+  .gauge .unit { font-size: 0.4em; color: var(--muted); margin-left: 4px; }
+  .gauge .bar { width: 80%; height: 10px; border-radius: 5px; background: var(--segment); overflow: hidden; pointer-events: none; }
+  .gauge .fill { height: 100%; width: 0; background: var(--ok); transition: width 200ms; }
+  .gauge.warning .fill { background: var(--warn); }
+  .gauge.emergency .fill { background: var(--bad); }
+  .gauge.emergency .value { color: var(--bad); }
+  .segment.unavailable { display: none; }
 
   .btn {
     --c: #8b949e;
@@ -118,7 +148,7 @@
   .btn.lvl-dim .sub, .btn.lvl-on .sub { color: var(--text); }
   .btn.hold { outline: 2px dashed rgba(255, 255, 255, 0.12); outline-offset: -8px; }
   .btn.hold::after {
-    content: "утримуй";
+    content: "HOLD";
     position: absolute;
     top: 10px;
     right: 14px;
@@ -169,11 +199,12 @@
 </head>
 <body>
 <div id="status">
-  <span id="link-dot" class="dot"></span><span id="link-text">Підключення…</span>
-  <span id="game-dot" class="dot"></span><span id="game-text">Гра: немає даних</span>
+  <span id="link-dot" class="dot"></span><span id="link-text">CONNECTING…</span>
+  <span id="game-dot" class="dot"></span><span id="game-text">GAME: NO DATA</span>
 </div>
-<div id="grid"></div>
-<div id="rotate">Поверни планшет горизонтально</div>
+<div id="pages"></div>
+<nav id="tabs"></nav>
+<div id="rotate">Rotate the tablet to landscape</div>
 <script>
   const PING_INTERVAL_MS = 2000;
   const PONG_TIMEOUT_MS = 5000;
@@ -181,8 +212,20 @@
   const RECONNECT_MAX_MS = 5000;
   const TAP_FLASH_MS = 120;
   const MAX_QUEUED_ERRORS = 20;
+  const PAGE_STORAGE_KEY = "cabDeckPage";
 
-  const grid = document.getElementById("grid");
+  // Vibration patterns in ms. Works on Android browsers; iPad has no vibration hardware.
+  const HAPTIC = {
+    tap: 12,
+    hold: 25,
+    segment: 10,
+    detent: 6,
+    tab: 6,
+    linkLost: [40, 60, 40],
+  };
+
+  const deck = document.getElementById("pages");
+  const tabs = document.getElementById("tabs");
   const linkDot = document.getElementById("link-dot");
   const linkText = document.getElementById("link-text");
   const gameDot = document.getElementById("game-dot");
@@ -194,6 +237,13 @@
   let lastPong = 0;
   let reconnectDelay = RECONNECT_MIN_MS;
   let reconnectTimer = null;
+  let wasOnline = false;
+  let lastSwitches = {};
+
+  function haptic(pattern) {
+    if (typeof navigator.vibrate !== "function") return;
+    try { navigator.vibrate(pattern); } catch (_) { /* blocked without user activation */ }
+  }
 
   // --- Connection ---------------------------------------------------------
 
@@ -236,9 +286,11 @@
   }
 
   function setOnline(online) {
+    if (wasOnline && !online) haptic(HAPTIC.linkLost);
+    wasOnline = online;
     document.body.classList.toggle("online", online);
     linkDot.className = online ? "dot ok" : "dot";
-    linkText.textContent = online ? "Підключено" : "Перепідключення…";
+    linkText.textContent = online ? "CONNECTED" : "RECONNECTING…";
   }
 
   function handleMessage(data) {
@@ -260,10 +312,42 @@
   // --- Layout -------------------------------------------------------------
 
   function renderLayout(layout) {
-    grid.style.gridTemplateColumns = `repeat(${layout.grid.cols}, 1fr)`;
-    grid.style.gridTemplateRows = `repeat(${layout.grid.rows}, 1fr)`;
-    grid.replaceChildren(...layout.buttons.map(createControl));
+    const pageNodes = layout.pages.map((page) => {
+      const node = el("div", "page");
+      node.style.gridTemplateColumns = `repeat(${page.grid.cols}, 1fr)`;
+      node.style.gridTemplateRows = `repeat(${page.grid.rows}, 1fr)`;
+      node.append(...page.buttons.map(createControl));
+      return node;
+    });
+    const tabNodes = layout.pages.map((page, index) => {
+      const tab = el("div", "tab", page.label);
+      tab.dataset.page = String(index);
+      return tab;
+    });
+    deck.replaceChildren(...pageNodes);
+    tabs.replaceChildren(...tabNodes);
+    tabs.classList.toggle("single", pageNodes.length < 2);
+    showPage(Math.min(storedPage(), pageNodes.length - 1));
   }
+
+  function storedPage() {
+    try { return Number(localStorage.getItem(PAGE_STORAGE_KEY)) || 0; } catch (_) { return 0; }
+  }
+
+  function showPage(index) {
+    deck.querySelectorAll(".page").forEach((page, i) => page.classList.toggle("shown", i === index));
+    tabs.querySelectorAll(".tab").forEach((tab, i) => tab.classList.toggle("shown", i === index));
+    try { localStorage.setItem(PAGE_STORAGE_KEY, String(index)); } catch (_) { /* storage unavailable */ }
+  }
+
+  tabs.addEventListener("pointerdown", (event) => {
+    const tab = event.target.closest(".tab");
+    if (!tab || tab.classList.contains("shown")) return;
+    event.preventDefault();
+    releaseAllLocal(true);
+    haptic(HAPTIC.tab);
+    showPage(Number(tab.dataset.page));
+  });
 
   function el(tag, className, text) {
     const node = document.createElement(tag);
@@ -293,6 +377,16 @@
       return button;
     }
 
+    if (config.type === "gauge") {
+      button.dataset.min = String(config.min);
+      button.dataset.max = String(config.max);
+      const value = el("span", "value", "—");
+      const bar = el("div", "bar");
+      bar.append(el("div", "fill"));
+      button.append(el("span", "label", config.label), value, bar);
+      return button;
+    }
+
     button.append(el("span", "icon", config.icon), el("span", "label", config.label), el("span", "sub", ""));
     return button;
   }
@@ -303,36 +397,72 @@
     const game = state.game || {};
     if (!game.telemetry) {
       gameDot.className = "dot";
-      gameText.textContent = "Гра: немає телеметрії";
+      gameText.textContent = "GAME: NO TELEMETRY";
     } else if (!game.active) {
       gameDot.className = "dot warn";
-      gameText.textContent = "Гра: не запущена";
+      gameText.textContent = "GAME: NOT RUNNING";
     } else if (game.paused) {
       gameDot.className = "dot warn";
-      gameText.textContent = "Гра: пауза";
+      gameText.textContent = "GAME: PAUSED";
     } else {
       gameDot.className = "dot ok";
-      gameText.textContent = "Гра: в кабіні";
+      gameText.textContent = "GAME: IN CAB";
     }
 
     const indicators = state.indicators || {};
-    for (const button of grid.querySelectorAll(".btn[data-indicator]")) {
+    for (const button of deck.querySelectorAll(".btn[data-indicator]")) {
       const indicator = indicators[button.dataset.indicator];
+      if (button.dataset.type === "gauge") {
+        applyGauge(button, indicator);
+        continue;
+      }
       const level = indicator ? indicator.level : "none";
       button.classList.toggle("lvl-dim", level === "dim");
       button.classList.toggle("lvl-on", level === "on");
       const sub = button.querySelector(".sub");
       if (sub) sub.textContent = indicator && indicator.text ? indicator.text : "";
+      if (button.dataset.type === "switch") hideUnavailable(button, indicator);
     }
 
     const switches = state.switches || {};
-    for (const button of grid.querySelectorAll(".btn.switch")) {
+    for (const button of deck.querySelectorAll(".btn.switch")) {
       const position = switches[button.dataset.id];
+      // One tick per detent the switch actually passes.
+      if (button.closest(".page.shown") && lastSwitches[button.dataset.id] !== undefined && position !== lastSwitches[button.dataset.id]) {
+        haptic(HAPTIC.detent);
+      }
       for (const segment of button.querySelectorAll(".segment")) {
         const isCurrent = Number(segment.dataset.position) === position;
         segment.classList.toggle("current", isCurrent);
         if (isCurrent) segment.classList.remove("pending");
       }
+    }
+    lastSwitches = switches;
+  }
+
+  function applyGauge(button, indicator) {
+    const value = button.querySelector(".value");
+    const fill = button.querySelector(".fill");
+    button.classList.remove("warning", "emergency");
+    if (!indicator) {
+      value.textContent = "—";
+      fill.style.width = "0";
+      return;
+    }
+    const min = Number(button.dataset.min);
+    const max = Number(button.dataset.max);
+    const ratio = Math.max(0, Math.min(1, (indicator.value - min) / (max - min)));
+    value.textContent = Math.round(indicator.value);
+    value.append(el("span", "unit", indicator.unit || ""));
+    fill.style.width = `${ratio * 100}%`;
+    if (indicator.state === "warning" || indicator.state === "emergency") button.classList.add(indicator.state);
+  }
+
+  function hideUnavailable(button, indicator) {
+    // Trucks differ in retarder steps; hide positions this truck does not have.
+    const max = indicator && indicator.max ? indicator.max : Infinity;
+    for (const segment of button.querySelectorAll(".segment")) {
+      segment.classList.toggle("unavailable", Number(segment.dataset.position) > max);
     }
   }
 
@@ -350,14 +480,16 @@
     if (!segment.classList.contains("current")) segment.classList.add("pending");
     segment.classList.add("pressed");
     setTimeout(() => segment.classList.remove("pressed"), TAP_FLASH_MS);
+    haptic(HAPTIC.segment);
     send({ id: button.dataset.id, event: "set", position: Number(segment.dataset.position) });
   }
 
-  grid.addEventListener("pointerdown", (event) => {
+  deck.addEventListener("pointerdown", (event) => {
     const button = event.target.closest(".btn");
     if (!button || !isOnline()) return;
     event.preventDefault();
 
+    if (button.dataset.type === "gauge") return;
     if (button.dataset.type === "switch") {
       const segment = event.target.closest(".segment");
       if (segment) tapSegment(segment);
@@ -368,7 +500,10 @@
     const alreadyPressed = pointersOn(button) > 0;
     activePointers.set(event.pointerId, button);
     button.classList.add("active");
-    if (!alreadyPressed) send({ id: button.dataset.id, event: "down" });
+    if (!alreadyPressed) {
+      haptic(button.dataset.type === "hold" ? HAPTIC.hold : HAPTIC.tap);
+      send({ id: button.dataset.id, event: "down" });
+    }
   });
 
   function endPointer(event) {
@@ -382,7 +517,7 @@
   }
 
   for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
-    grid.addEventListener(type, endPointer);
+    deck.addEventListener(type, endPointer);
   }
 
   function releaseAllLocal(notifyServer) {

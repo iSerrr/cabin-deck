@@ -33,8 +33,8 @@ LOG_PATH = BASE_DIR / "logs" / "cab_deck.log"
 DEFAULT_PORT = 8000
 
 BUTTON_ID_PATTERN = re.compile(r"^cab_deck_btn_(\d{3})$")
-SWITCH_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
-CONTROL_TYPES = ("tap", "hold", "switch")
+NAMED_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+CONTROL_TYPES = ("tap", "hold", "switch", "gauge")
 MAX_LOGGED_TEXT = 500
 MAX_LOG_LINES = 1000
 
@@ -53,7 +53,19 @@ INDICATORS = (
     "park_brake",
     "wipers",
     "trailer",
+    "retarder",
+    "engine_brake",
+    "diff_lock",
+    "lift_axle",
+    "trailer_lift_axle",
+    "beacon",
+    "aux_front",
+    "aux_roof",
+    "air_pressure",
 )
+GAUGE_INDICATORS = ("air_pressure",)
+# Switches whose position the game reports exactly (instead of on/off only).
+POSITION_SOURCES = ("retarder",)
 
 log = logging.getLogger("cab_deck")
 
@@ -107,7 +119,7 @@ class DeckState:
     switches: dict[str, SwitchState] = field(default_factory=dict)
     sockets: set[WebSocket] = field(default_factory=set)
     game: dict[str, Any] = field(default_factory=lambda: {"telemetry": False})
-    indicators: dict[str, dict[str, str]] = field(default_factory=dict)
+    indicators: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_state_message: dict[str, Any] | None = None
 
     @property
@@ -166,7 +178,6 @@ def validate_config(raw: Any) -> dict[str, Any]:
         "tap_ms": raw.get("tap_ms", 80),
         "switch_gap_ms": raw.get("switch_gap_ms", 150),
         "hold_timeout_s": raw.get("hold_timeout_s", 10),
-        "grid": raw.get("grid", {}),
     }
 
     if not _is_int_in(config["vjoy_device"], 1, 16):
@@ -178,39 +189,61 @@ def validate_config(raw: Any) -> dict[str, Any]:
     if not isinstance(config["hold_timeout_s"], (int, float)) or not 0 < config["hold_timeout_s"] <= 120:
         problems.append("hold_timeout_s must be a number from 0 to 120.")
 
-    grid = config["grid"]
-    grid_ok = isinstance(grid, dict) and _is_int_in(grid.get("cols"), 1, 12) and _is_int_in(grid.get("rows"), 1, 12)
-    if not grid_ok:
-        problems.append('grid must look like {"cols": 4, "rows": 3}.')
+    raw_pages = raw.get("pages")
+    if not isinstance(raw_pages, list) or not raw_pages:
+        problems.append("pages must be a non-empty list.")
+        raw_pages = []
 
-    entries = raw.get("buttons")
-    if not isinstance(entries, list) or not entries:
-        problems.append("buttons must be a non-empty list.")
-        entries = []
-
+    pages: list[dict[str, Any]] = []
     controls_by_id: dict[str, dict[str, Any]] = {}
     used_numbers: dict[int, str] = {}
-    for index, entry in enumerate(entries, start=1):
-        control = _validate_control(entry, f"buttons[{index}]", problems)
-        if control is None:
+    for page_index, raw_page in enumerate(raw_pages, start=1):
+        page = _validate_page(raw_page, f"pages[{page_index}]", problems)
+        if page is None:
             continue
-        if control["id"] in controls_by_id:
-            problems.append(f"buttons[{index}]: duplicate id {control['id']}.")
-            continue
-        for number in _vjoy_numbers(control):
-            if number in used_numbers:
-                problems.append(f"buttons[{index}]: vJoy button {number} is already used by {used_numbers[number]}.")
-            used_numbers[number] = control["id"]
-        controls_by_id[control["id"]] = control
-
-    if grid_ok and len(controls_by_id) > grid["cols"] * grid["rows"]:
-        problems.append(f"{len(controls_by_id)} controls do not fit into a {grid['cols']}x{grid['rows']} grid.")
+        for index, entry in enumerate(raw_page.get("buttons") or [], start=1):
+            where = f"pages[{page_index}].buttons[{index}]"
+            control = _validate_control(entry, where, problems)
+            if control is None:
+                continue
+            if control["id"] in controls_by_id:
+                problems.append(f"{where}: duplicate id {control['id']}.")
+                continue
+            for number in _vjoy_numbers(control):
+                if number in used_numbers:
+                    problems.append(f"{where}: vJoy button {number} is already used by {used_numbers[number]}.")
+                used_numbers[number] = control["id"]
+            controls_by_id[control["id"]] = control
+            page["controls"].append(control["id"])
+        grid = page["grid"]
+        if len(page["controls"]) > grid["cols"] * grid["rows"]:
+            problems.append(f"pages[{page_index}]: {len(page['controls'])} controls do not fit into a {grid['cols']}x{grid['rows']} grid.")
+        pages.append(page)
 
     if problems:
         raise ConfigError("Invalid config.json:\n  - " + "\n  - ".join(problems))
 
+    config["pages"] = pages
     config["controls_by_id"] = controls_by_id
     return config
+
+
+def _validate_page(raw_page: Any, where: str, problems: list[str]) -> dict[str, Any] | None:
+    if not isinstance(raw_page, dict):
+        problems.append(f"{where} must be an object.")
+        return None
+    label = raw_page.get("label")
+    grid = raw_page.get("grid")
+    buttons = raw_page.get("buttons")
+    if not isinstance(label, str) or not label.strip():
+        problems.append(f"{where}: label must be a non-empty string.")
+    if not isinstance(grid, dict) or not _is_int_in(grid.get("cols"), 1, 12) or not _is_int_in(grid.get("rows"), 1, 12):
+        problems.append(f'{where}: grid must look like {{"cols": 4, "rows": 3}}.')
+        return None
+    if not isinstance(buttons, list) or not buttons:
+        problems.append(f"{where}: buttons must be a non-empty list.")
+        return None
+    return {"label": label, "grid": {"cols": grid["cols"], "rows": grid["rows"]}, "controls": []}
 
 
 def _validate_control(entry: Any, where: str, problems: list[str]) -> dict[str, Any] | None:
@@ -237,10 +270,26 @@ def _validate_control(entry: Any, where: str, problems: list[str]) -> dict[str, 
         "indicator": indicator,
     }
 
-    if control_type == "switch":
-        if not isinstance(control["id"], str) or not SWITCH_ID_PATTERN.match(control["id"]):
-            problems.append(f"{where}: switch id {control['id']!r} must be lowercase letters, digits and _.")
+    if control_type in ("switch", "gauge"):
+        if not isinstance(control["id"], str) or not NAMED_ID_PATTERN.match(control["id"]):
+            problems.append(f"{where}: {control_type} id {control['id']!r} must be lowercase letters, digits and _.")
             return None
+
+    if control_type == "gauge":
+        low, high = entry.get("min", 0), entry.get("max")
+        if indicator not in GAUGE_INDICATORS:
+            problems.append(f"{where}: gauge indicator must be one of {GAUGE_INDICATORS}.")
+        if not isinstance(low, (int, float)) or not isinstance(high, (int, float)) or low >= high:
+            problems.append(f"{where}: gauge needs numeric min < max.")
+            return None
+        control.update(min=low, max=high)
+        return control
+
+    if control_type == "switch":
+        position_source = entry.get("position_source")
+        if position_source is not None and position_source not in POSITION_SOURCES:
+            problems.append(f"{where}: position_source must be one of {POSITION_SOURCES}.")
+        control["position_source"] = position_source
         positions = entry.get("positions")
         if (
             not isinstance(positions, list)
@@ -275,6 +324,8 @@ def _button_number(button_id: Any) -> int | None:
 def _vjoy_numbers(control: dict[str, Any]) -> list[int]:
     if control["type"] == "switch":
         return [control["forward"], control["back"]]
+    if control["type"] == "gauge":
+        return []
     return [control["number"]]
 
 
@@ -393,10 +444,12 @@ def open_telemetry() -> TelemetryReader:
     return read
 
 
-def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, str]]:
+def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Map raw telemetry to panel indicators with level off / dim / on."""
 
-    def flag(value: Any) -> dict[str, str]:
+    def flag(value: Any, text: str | None = None) -> dict[str, Any]:
+        if value and text:
+            return {"level": "on", "text": text}
         return {"level": "on" if value else "off"}
 
     def blinking(active: Any, phase: Any) -> dict[str, str]:
@@ -404,19 +457,44 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, str]]:
             return {"level": "off"}
         return {"level": "on" if phase else "dim"}
 
+    def three_state(value: Any) -> dict[str, str]:
+        # Aux lights report 0 = off, 1 = dimmed, 2 = full.
+        return {"level": {1: "dim", 2: "on"}.get(value, "off")}
+
     if data.get("engineEnabled"):
-        engine = {"level": "on", "text": "Заведено"}
+        engine = {"level": "on", "text": "RUNNING"}
     elif data.get("electricEnabled"):
-        engine = {"level": "dim", "text": "Запалювання"}
+        engine = {"level": "dim", "text": "IGNITION"}
     else:
         engine = {"level": "off"}
 
     if data.get("lightsBeamLow"):
-        lights = {"level": "on", "text": "Ближнє"}
+        lights = {"level": "on", "text": "LOW"}
     elif data.get("lightsParking"):
-        lights = {"level": "dim", "text": "Габарити"}
+        lights = {"level": "dim", "text": "PARK"}
     else:
         lights = {"level": "off"}
+
+    retarder_value = int(data.get("retarderBrake") or 0)
+    retarder = {
+        "level": "on" if retarder_value else "off",
+        "value": retarder_value,
+        "max": int(data.get("retarderStepCount") or 0),
+    }
+
+    # truck-telemetry overwrites the float warning threshold with the bool flag of the same name.
+    if data.get("airPressureEmergency"):
+        air_state = "emergency"
+    elif data.get("airPressureWarning") is True:
+        air_state = "warning"
+    else:
+        air_state = "ok"
+    air_pressure = {
+        "level": "on" if air_state != "ok" else "off",
+        "value": round(float(data.get("airPressure") or 0.0), 1),
+        "unit": "psi",
+        "state": air_state,
+    }
 
     trailers = data.get("trailer") or [{}]
     hazard_phase = data.get("blinkerLeftOn") or data.get("blinkerRightOn")
@@ -429,7 +507,16 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, str]]:
         "hazards": blinking(data.get("lightsHazards"), hazard_phase),
         "park_brake": flag(data.get("parkBrake")),
         "wipers": flag(data.get("wipers")),
-        "trailer": flag(trailers[0].get("attached")),
+        "trailer": flag(trailers[0].get("attached"), "CONNECTED"),
+        "retarder": retarder,
+        "engine_brake": flag(data.get("motorBrake")),
+        "diff_lock": flag(data.get("differentialLock"), "LOCKED"),
+        "lift_axle": flag(data.get("liftAxleIndicator"), "RAISED"),
+        "trailer_lift_axle": flag(data.get("trailerLiftAxleIndicator"), "RAISED"),
+        "beacon": flag(data.get("lightsBeacon")),
+        "aux_front": three_state(data.get("lightsAuxFront")),
+        "aux_roof": three_state(data.get("lightsAuxRoof")),
+        "air_pressure": air_pressure,
     }
 
 
@@ -445,7 +532,11 @@ def update_from_telemetry(state: DeckState, data: dict[str, Any] | None) -> None
 
 
 def correct_switches(state: DeckState) -> None:
-    """Keep switch positions honest: position 0 must match a stopped indicator."""
+    """Keep switch positions honest against telemetry.
+
+    Switches with a position_source take the exact position from the game.
+    Others only know on/off: position 0 must match a stopped indicator.
+    """
     now = time.monotonic()
     for control in state.controls_by_id.values():
         if control["type"] != "switch" or control["indicator"] not in state.indicators:
@@ -453,7 +544,14 @@ def correct_switches(state: DeckState) -> None:
         switch = state.switches[control["id"]]
         if switch.moving or now - switch.last_press < SWITCH_SETTLE_S:
             continue
-        running = state.indicators[control["indicator"]]["level"] != "off"
+        indicator = state.indicators[control["indicator"]]
+        if control["position_source"]:
+            exact = min(indicator["value"], len(control["positions"]) - 1)
+            if exact != switch.position:
+                log.info("%s: game reports position %d (panel had %d)", control["id"], exact, switch.position)
+                switch.position = switch.target = exact
+            continue
+        running = indicator["level"] != "off"
         if not running and switch.position != 0:
             log.info("%s: game shows it off, correcting position %d -> 0", control["id"], switch.position)
             switch.position = switch.target = 0
@@ -510,9 +608,18 @@ async def _release_later(state: DeckState, number: int, delay_s: float, warn: st
 # --- Switches ----------------------------------------------------------------
 
 
+def switch_limit(state: DeckState, control: dict[str, Any]) -> int:
+    """Highest reachable position; the game may report fewer steps than configured."""
+    highest = len(control["positions"]) - 1
+    indicator = state.indicators.get(control["indicator"] or "")
+    if control["position_source"] and indicator and indicator.get("max"):
+        return min(highest, indicator["max"])
+    return highest
+
+
 def set_switch(state: DeckState, control: dict[str, Any], target: int) -> None:
     switch = state.switches[control["id"]]
-    switch.target = target
+    switch.target = min(target, switch_limit(state, control))
     if not switch.moving:
         switch.task = asyncio.create_task(move_switch(state, control))
 
@@ -544,12 +651,20 @@ async def move_switch(state: DeckState, control: dict[str, Any]) -> None:
 
 
 def layout_message(config: dict[str, Any]) -> dict[str, Any]:
-    keys = ("id", "type", "label", "icon", "color", "indicator", "positions")
-    controls = [
-        {key: control[key] for key in keys if key in control}
-        for control in config["controls_by_id"].values()
+    keys = ("id", "type", "label", "icon", "color", "indicator", "positions", "min", "max")
+    controls_by_id = config["controls_by_id"]
+    pages = [
+        {
+            "label": page["label"],
+            "grid": page["grid"],
+            "buttons": [
+                {key: controls_by_id[control_id][key] for key in keys if key in controls_by_id[control_id]}
+                for control_id in page["controls"]
+            ],
+        }
+        for page in config["pages"]
     ]
-    return {"type": "layout", "grid": config["grid"], "buttons": controls}
+    return {"type": "layout", "pages": pages}
 
 
 def state_message(state: DeckState) -> dict[str, Any]:
@@ -589,7 +704,7 @@ def handle_message(state: DeckState, text: str, held: set[int]) -> dict[str, Any
 
     control = state.controls_by_id.get(message.get("id"))
     event = message.get("event")
-    if control is None:
+    if control is None or control["type"] == "gauge":
         log.warning("Ignored unknown command: %s", text[:MAX_LOGGED_TEXT])
         return None
 
