@@ -6,7 +6,7 @@
 
 ## Project in one line
 A tablet web panel that presses vJoy virtual joystick buttons on a Windows PC
-so Euro Truck Simulator 2 sees them as a separate game controller.
+so American Truck Simulator (or ETS2) sees them as a separate game controller.
 
 ## How to behave
 - `PRD.md` is the source of truth for scope. Build the smallest thing that
@@ -40,4 +40,4 @@ so Euro Truck Simulator 2 sees them as a separate game controller.
 ## Commands
 - Install: `pip install -r requirements.txt`
 - Run: `python server.py` (Windows) or `python server.py --dry-run` (macOS)
-- Spike: `python spike_vjoy.py 1` (Windows, ETS2 running)
+- Spike: `python spike_vjoy.py 1` (Windows, ATS or ETS2 running)

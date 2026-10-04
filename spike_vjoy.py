@@ -1,11 +1,11 @@
-"""Spike: check that ETS2 sees vJoy buttons pressed from Python.
+"""Spike: check that ATS/ETS2 sees vJoy buttons pressed from Python.
 
 Run on the Windows gaming PC with vJoy installed:
     pip install pyvjoy
     python spike_vjoy.py 1
 
 The script pulses the given vJoy button every few seconds. While it runs,
-open ETS2 controls, start binding an action and wait for the pulse.
+open ATS/ETS2 controls, start binding an action and wait for the pulse.
 """
 
 import argparse
@@ -18,7 +18,7 @@ INTERVAL_SECONDS = 3.0
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Pulse a vJoy button for ETS2 testing.")
+    parser = argparse.ArgumentParser(description="Pulse a vJoy button for ATS/ETS2 testing.")
     parser.add_argument("button", type=int, help="vJoy button number, 1-based")
     parser.add_argument("--count", type=int, default=20, help="number of pulses")
     return parser.parse_args()

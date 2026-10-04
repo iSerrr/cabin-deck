@@ -1,9 +1,9 @@
-"""Spike: check which truck states ETS2 telemetry exposes.
+"""Spike: check which truck states ATS/ETS2 telemetry exposes.
 
 Requires the RenCloud scs-sdk-plugin (V.1.12.1) installed in the game:
-copy scs-telemetry.dll to <ETS2>\\bin\\win_x64\\plugins\\
+copy scs-telemetry.dll to <game folder>\\bin\\win_x64\\plugins\\
 
-Run on the Windows gaming PC while ETS2 is running (in the cab, not in menus):
+Run on the Windows gaming PC while ATS/ETS2 is running (in the cab, not in menus):
     .venv\\Scripts\\python spike_telemetry.py
 
 Prints every watched field once, then only the fields that change.
@@ -53,7 +53,7 @@ def open_telemetry() -> Any:
         truck_telemetry.init()
     except FileNotFoundError:
         sys.exit(
-            "Telemetry shared memory not found. Start ETS2 with scs-telemetry.dll in "
+            "Telemetry shared memory not found. Start ATS/ETS2 with scs-telemetry.dll in "
             "bin\\win_x64\\plugins and confirm the 'advanced SDK features' dialog."
         )
     # The library raises a bare Exception for an unsupported plugin version.
