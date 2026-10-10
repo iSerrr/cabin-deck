@@ -175,24 +175,27 @@
 
   /* CLOCK: in-game and real time side by side. */
   .clock-zone { flex: none; height: 236px; }
-  .clock-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 2px 1fr; gap: 10px; align-items: center; padding: 0 4px; }
+  .clock-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 2px 1fr; gap: 14px; align-items: center; padding: 4px 6px 0; }
   .clock-sep { align-self: stretch; margin: 8px 0; background: linear-gradient(180deg, transparent, rgba(0,0,0,.6), transparent); box-shadow: 1px 0 0 rgba(255,255,255,.05); }
-  .clock-half { display: flex; align-items: center; gap: 12px; min-width: 0; }
-  .clock-bezel { flex: none; width: 150px; height: 150px; padding: 4px; border-radius: 50%; background: linear-gradient(160deg, #f2f1ec, #8f8a80 40%, #2e2c29 60%, #c9c5bc); box-shadow: 0 1px 0 rgba(255,255,255,.1), 0 10px 18px -6px rgba(0,0,0,.9), 0 2px 3px rgba(0,0,0,.6); }
+  .clock-col { align-self: start; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .clock-half { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .clock-bezel { flex: none; width: 132px; height: 132px; padding: 4px; border-radius: 50%; background: linear-gradient(160deg, #f2f1ec, #8f8a80 40%, #2e2c29 60%, #c9c5bc); box-shadow: 0 1px 0 rgba(255,255,255,.1), 0 10px 18px -6px rgba(0,0,0,.9), 0 2px 3px rgba(0,0,0,.6); }
   .clock-face { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; background: radial-gradient(circle at 50% 40%, #17181B, #0A0B0D 75%); box-shadow: inset 0 4px 10px rgba(0,0,0,.9), inset 0 0 0 1px #000; }
-  .clock-tick { position: absolute; left: 50%; top: 4px; width: 1px; height: 5px; margin-left: -.5px; background: rgba(230,232,234,.45); transform-origin: 50% 67px; }
+  .clock-tick { position: absolute; left: 50%; top: 4px; width: 1px; height: 5px; margin-left: -.5px; background: rgba(230,232,234,.45); transform-origin: 50% 58px; }
   .clock-tick.major { width: 3px; height: 10px; margin-left: -1.5px; background: #E6E8EA; }
   .clock-hand { position: absolute; left: 50%; bottom: 50%; border-radius: 2px; transform-origin: 50% 100%; transition: opacity .3s; }
-  .clock-hand.hour { width: 5px; height: 36px; margin-left: -2.5px; }
-  .clock-hand.minute { width: 3px; height: 54px; margin-left: -1.5px; }
-  .clock-hand.second { width: 1.5px; height: 58px; margin-left: -.75px; background: #E2463C; }
+  .clock-hand.hour { width: 5px; height: 31px; margin-left: -2.5px; }
+  .clock-hand.minute { width: 3px; height: 46px; margin-left: -1.5px; }
+  .clock-hand.second { width: 1.5px; height: 50px; margin-left: -.75px; background: #E2463C; }
   .clock-pin { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: linear-gradient(160deg, #f2f1ec, #8f8a80 40%, #2e2c29 60%, #c9c5bc); box-shadow: 0 2px 4px rgba(0,0,0,.8); }
   .clock-glare { position: absolute; left: 10%; right: 10%; top: 2%; height: 38%; border-radius: 50%; background: radial-gradient(ellipse at 50% 0%, rgba(255,255,255,.12), transparent 70%); pointer-events: none; }
   .clock-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
   .clock-tag { align-self: flex-start; padding: 2px 8px; border: 1px solid; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: .16em; }
   .clock-digital { font-size: 34px; font-weight: 700; letter-spacing: .02em; color: #E6E8EA; font-variant-numeric: tabular-nums; line-height: 1.05; }
-  .clock-day { font-size: 14px; font-weight: 700; letter-spacing: .1em; color: var(--legend); line-height: 1.2; }
-  .clock-date { font-size: 12px; font-weight: 600; letter-spacing: .08em; color: #8B9199; white-space: nowrap; }
+  .clock-note { min-height: 14px; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #8B9199; line-height: 1.2; }
+  .week { display: flex; gap: 4px; }
+  .week-day { flex: 1; height: 24px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: rgba(228,220,196,.4); background: linear-gradient(180deg, #131518, #1B1E22); box-shadow: inset 0 1px 3px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.04); }
+  .week-day.today { color: #2A1A04; background: radial-gradient(circle at 50% 30%, #FFE3A6, #E8A13A 60%, #9A5F10); box-shadow: 0 0 10px rgba(232,161,58,.7), inset 0 1px 1px rgba(255,255,255,.5); }
   .fuel-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 170px minmax(0, 1fr) 150px; gap: 14px; align-items: center; padding: 0 6px; }
   .fuel-big { font-size: 40px; font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; line-height: 1; }
   .fuel-unit { font-size: 15px; font-weight: 700; letter-spacing: .12em; margin-left: 6px; }
@@ -992,8 +995,6 @@
 
   // --- Clock --------------------------------------------------------------
 
-  const DAY_NAMES = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
-  const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
   function analogClock(color, withSeconds) {
     const face = h("div", { class: "clock-face" });
@@ -1021,16 +1022,23 @@
     return { node: h("div", { class: "clock-bezel" }, face), set };
   }
 
-  function clockHalf(tag, tagColor, color, withSeconds) {
+  function clockHalf(tag, tagColor, color, withSeconds, info, below) {
     const clock = analogClock(color, withSeconds);
     const digital = h("div", { class: "clock-digital" });
-    const day = h("div", { class: "clock-day" });
-    const date = h("div", { class: "clock-date" });
-    const node = h("div", { class: "clock-half" }, clock.node,
-      h("div", { class: "clock-info" },
-        h("div", { class: "clock-tag", style: `color:${tagColor};border-color:${mix(tagColor, 55)};background:${mix(tagColor, 12)}` }, tag),
-        digital, day, date));
-    return { node, clock, digital, day, date };
+    const node = h("div", { class: "clock-col" },
+      h("div", { class: "clock-half" }, clock.node,
+        h("div", { class: "clock-info" },
+          h("div", { class: "clock-tag", style: `color:${tagColor};border-color:${mix(tagColor, 55)};background:${mix(tagColor, 12)}` }, tag),
+          digital, info)),
+      below);
+    return { node, clock, digital };
+  }
+
+  function weekStrip() {
+    // Monday..Sunday as single letters; set(index) lights today, set(-1) dims all.
+    const cells = ["M", "T", "W", "T", "F", "S", "S"].map((letter) => h("div", { class: "week-day" }, letter));
+    const set = (today) => cells.forEach((cell, index) => cell.classList.toggle("today", index === today));
+    return { node: h("div", { class: "week" }, ...cells), set };
   }
 
   function pad2(value) {
@@ -1038,9 +1046,11 @@
   }
 
   function clockZone() {
-    // Game time: in-game minutes since 00:00 of day 1, which is a Monday. The game has no
-    // calendar date, only the day count. Real time: this tablet's local clock.
-    const game = clockHalf("IN-GAME", AMB, AMB, false);
+    // Game time: in-game minutes since 00:00 of day 1, which is a Monday; the week strip
+    // lights the current weekday. Real time: this tablet's local clock, time only.
+    const week = weekStrip();
+    const note = h("div", { class: "clock-note" });
+    const game = clockHalf("IN-GAME", AMB, AMB, false, note, week.node);
     const real = clockHalf("REAL TIME", BLU, "#E6E8EA", true);
     updaters.push(() => {
       const nav = model.online && model.game.telemetry && model.game.active ? model.indicators.nav : null;
@@ -1048,19 +1058,17 @@
         const minutes = nav.clock_min % 1440;
         game.clock.set(minutes, 0);
         setText(game.digital, `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`);
-        setText(game.day, DAY_NAMES[Math.floor(nav.clock_min / 1440) % 7]);
-        setText(game.date, `DAY ${Math.floor(nav.clock_min / 1440) + 1}${model.game.paused ? " · PAUSED" : ""}`);
+        week.set(Math.floor(nav.clock_min / 1440) % 7);
+        setText(note, model.game.paused ? "PAUSED" : "");
       } else {
         game.clock.set(null, 0);
         setText(game.digital, "--:--");
-        setText(game.day, !model.online ? "NO LINK" : !model.game.telemetry ? "NO TELEMETRY" : "NOT IN CAB");
-        setText(game.date, "");
+        week.set(-1);
+        setText(note, !model.online ? "NO LINK" : !model.game.telemetry ? "NO TELEMETRY" : "NOT IN CAB");
       }
       const now = new Date();
       real.clock.set(now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60, now.getSeconds());
       setText(real.digital, `${pad2(now.getHours())}:${pad2(now.getMinutes())}`);
-      setText(real.day, DAY_NAMES[(now.getDay() + 6) % 7]);
-      setText(real.date, `${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`);
     });
     return h("div", { class: "zone clock-zone" }, h("div", { class: "zone-in strip" },
       h("div", { class: "title-row", style: "padding:0 4px;height:26px" }, h("div", { class: "zone-title" }, "CLOCK")),
@@ -1170,7 +1178,7 @@
       setStyle(rest.value, "color", tired ? AMB : "#E6E8EA");
       // Miles left before the rest stop, from the server's average pace over the last 50 mi.
       if (!n || n.rest_min <= 0) setText(rest.sub, "");
-      else if (n.rest_range_km === null || n.rest_range_km === undefined) setText(rest.sub, "MEASURING PACE…");
+      else if (n.rest_range_km === null || n.rest_range_km === undefined) setText(rest.sub, "MEASURING…");
       else setText(rest.sub, `≈ ${Math.round(n.rest_range_km * 0.621371)} MI`);
       rest.sub.classList.toggle("strong", Boolean(n && n.rest_range_km));
       const late = n && n.deadline_min !== null && n.deadline_min < 0;
