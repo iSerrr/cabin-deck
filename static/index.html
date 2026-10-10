@@ -139,7 +139,9 @@
   #dash { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; transition: opacity .4s; }
   #dash.offline { opacity: .28; pointer-events: none; }
   #panel.setup-open #dash { visibility: hidden; }
-  .main-row { flex: 1; min-height: 0; display: grid; grid-template-columns: 336fr 233fr 233fr 327fr; gap: 12px; }
+  .main-row { flex: 1; min-height: 0; display: grid; grid-template-columns: 336fr 233fr 560fr; gap: 12px; }
+  .stack { min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+  .stack > .zone:last-child { flex: 1; }
   .bottom-row { height: 162px; flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .zone {
     min-height: 0;
@@ -161,6 +163,36 @@
   }
   .zone-in.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .tall { grid-row: span 2; }
+
+  /* CAB & ACTION: ACTIVATE on the left, compact lamp and hold buttons on the right. */
+  .zone-in.cab { grid-template-columns: 1.25fr 1fr 1fr 1fr; grid-template-rows: 24px repeat(2, minmax(0, 1fr)); }
+  .zone-in.cab .activate { grid-row: span 2; }
+  .cab-row { grid-column: 2 / -1; min-height: 0; display: flex; gap: 12px; }
+  .cab-row > .tile:nth-child(-n+2) { flex: 1.15; }
+  .cab-row > .tile:last-child { flex: .7; }
+  .tile.compact { gap: 4px; padding: 6px 4px; }
+  .desc { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: #6B717A; text-align: center; }
+
+  /* CLOCK: in-game and real time side by side. */
+  .clock-zone { flex: none; height: 236px; }
+  .clock-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 2px 1fr; gap: 10px; align-items: center; padding: 0 4px; }
+  .clock-sep { align-self: stretch; margin: 8px 0; background: linear-gradient(180deg, transparent, rgba(0,0,0,.6), transparent); box-shadow: 1px 0 0 rgba(255,255,255,.05); }
+  .clock-half { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .clock-bezel { flex: none; width: 150px; height: 150px; padding: 4px; border-radius: 50%; background: linear-gradient(160deg, #f2f1ec, #8f8a80 40%, #2e2c29 60%, #c9c5bc); box-shadow: 0 1px 0 rgba(255,255,255,.1), 0 10px 18px -6px rgba(0,0,0,.9), 0 2px 3px rgba(0,0,0,.6); }
+  .clock-face { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; background: radial-gradient(circle at 50% 40%, #17181B, #0A0B0D 75%); box-shadow: inset 0 4px 10px rgba(0,0,0,.9), inset 0 0 0 1px #000; }
+  .clock-tick { position: absolute; left: 50%; top: 4px; width: 1px; height: 5px; margin-left: -.5px; background: rgba(230,232,234,.45); transform-origin: 50% 67px; }
+  .clock-tick.major { width: 3px; height: 10px; margin-left: -1.5px; background: #E6E8EA; }
+  .clock-hand { position: absolute; left: 50%; bottom: 50%; border-radius: 2px; transform-origin: 50% 100%; transition: opacity .3s; }
+  .clock-hand.hour { width: 5px; height: 36px; margin-left: -2.5px; }
+  .clock-hand.minute { width: 3px; height: 54px; margin-left: -1.5px; }
+  .clock-hand.second { width: 1.5px; height: 58px; margin-left: -.75px; background: #E2463C; }
+  .clock-pin { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: linear-gradient(160deg, #f2f1ec, #8f8a80 40%, #2e2c29 60%, #c9c5bc); box-shadow: 0 2px 4px rgba(0,0,0,.8); }
+  .clock-glare { position: absolute; left: 10%; right: 10%; top: 2%; height: 38%; border-radius: 50%; background: radial-gradient(ellipse at 50% 0%, rgba(255,255,255,.12), transparent 70%); pointer-events: none; }
+  .clock-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .clock-tag { align-self: flex-start; padding: 2px 8px; border: 1px solid; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: .16em; }
+  .clock-digital { font-size: 34px; font-weight: 700; letter-spacing: .02em; color: #E6E8EA; font-variant-numeric: tabular-nums; line-height: 1.05; }
+  .clock-day { font-size: 14px; font-weight: 700; letter-spacing: .1em; color: var(--legend); line-height: 1.2; }
+  .clock-date { font-size: 12px; font-weight: 600; letter-spacing: .08em; color: #8B9199; white-space: nowrap; }
   .fuel-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 170px minmax(0, 1fr) 150px; gap: 14px; align-items: center; padding: 0 6px; }
   .fuel-big { font-size: 40px; font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; line-height: 1; }
   .fuel-unit { font-size: 15px; font-weight: 700; letter-spacing: .12em; margin-left: 6px; }
@@ -175,6 +207,7 @@
   .nav-cell { border-radius: 8px; background: rgba(0,0,0,.28); box-shadow: inset 0 2px 6px rgba(0,0,0,.6); padding: 10px 10px 8px; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
   .nav-val { font-size: 26px; font-weight: 700; letter-spacing: .01em; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; color: #E6E8EA; }
   .nav-val.big { font-size: 34px; }
+  .nav-sub.strong { font-size: 14px; font-weight: 700; color: var(--legend); letter-spacing: .02em; }
   .nav-sub { font-size: 12px; font-weight: 600; letter-spacing: .06em; color: #8B9199; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .zone-in.strip { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px 8px; }
   .span { grid-column: 1 / -1; }
@@ -399,6 +432,8 @@
     liftAxle: "M8 46h48 M20 46a6 6 0 1 0 .1 0 M44 46a6 6 0 1 0 .1 0 M32 38V12 M22 22l10-10 10 10",
     trailerAxle: "M10 14h30v22H10z M40 26h10v10 M8 48h48 M18 48a5 5 0 1 0 .1 0 M46 48a5 5 0 1 0 .1 0 M25 30V20 M19 24l6-6 6 6",
     beacon: "M16 40a16 16 0 0 1 32 0z M10 40h44v8H10z M32 10v6 M14 18l5 4 M50 18l-5 4",
+    auxFront: "M8 24h48v14H8z M19 31m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0 M45 31m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0 M15 44l-4 10 M32 44v10 M49 44l4 10",
+    auxRoof: "M14 58V34l6-10h24l6 10v24z M20 34h24 M18 15h28v5H18z M22 9l-2-5 M32 9V3 M42 9l2-5",
     aux: "M10 28h44v10H10z M18 38v8 M46 38v8 M16 20l4 6 M48 20l-4 6 M32 16v8",
     horn: "M8 26h12l14-11v34L20 38H8z M42 24a10 10 0 0 1 0 16 M49 17a19 19 0 0 1 0 30",
     activate: "M9 10l-5 5 5 5 M20 4v7a4 4 0 0 1-4 4H4",
@@ -848,15 +883,15 @@
 
   function activateTile() {
     const ctl = "cab_deck_btn_023";
-    const { tile, bar } = tileNode(ctl, "button", "span", "flex-direction:row;gap:10px;padding:0 8px");
-    const button = h("div", { style: "position:relative;overflow:hidden;width:72px;height:72px;border-radius:50%;transition:transform .05s,box-shadow .12s;display:flex;align-items:center;justify-content:center" },
+    const { tile, bar } = tileNode(ctl, "button", "activate", "gap:10px;padding:8px 6px");
+    const button = h("div", { style: "position:relative;overflow:hidden;width:64px;height:64px;border-radius:50%;transition:transform .05s,box-shadow .12s;display:flex;align-items:center;justify-content:center" },
       h("div", { style: "position:absolute;left:14%;right:14%;top:5%;height:42%;border-radius:50%;background:radial-gradient(ellipse at 50% 0%,rgba(255,255,255,.6),transparent 70%)" }),
-      icon(ICON.activate, 34, "0 0 24 24", { strokeWidth: 2.6, style: "stroke:#3A2605" }));
-    const bezel = h("div", { style: "flex:none;width:100px;height:100px;padding:7px;border-radius:50%;background:linear-gradient(160deg,#f2f1ec,#8f8a80 40%,#2e2c29 60%,#c9c5bc)" },
+      icon(ICON.activate, 30, "0 0 24 24", { strokeWidth: 2.6, style: "stroke:#3A2605" }));
+    const bezel = h("div", { style: "flex:none;width:90px;height:90px;padding:6px;border-radius:50%;background:linear-gradient(160deg,#f2f1ec,#8f8a80 40%,#2e2c29 60%,#c9c5bc)" },
       h("div", { style: "width:100%;height:100%;border-radius:50%;background:radial-gradient(circle,#0a0a09,#23221f);box-shadow:inset 0 4px 10px rgba(0,0,0,.95);display:flex;align-items:center;justify-content:center" }, button));
-    tile.append(bezel, h("div", { style: "display:flex;flex-direction:column;gap:4px;min-width:0" },
+    tile.append(bezel, h("div", { style: "display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0" },
       h("div", { style: "font-size:17px;font-weight:600;letter-spacing:.06em;color:var(--legend)" }, "ACTIVATE"),
-      h("div", { style: "font-size:11px;font-weight:600;letter-spacing:.04em;color:#6B717A;line-height:1.3" }, "GATES · FUEL", h("br"), "SCALES · CARGO")));
+      h("div", { style: "font-size:11px;font-weight:600;letter-spacing:.04em;color:#6B717A;line-height:1.3;text-align:center" }, "GATES · FUEL", h("br"), "SCALES · CARGO")));
     updaters.push(() => {
       const pressed = model.pressed.has(ctl), flash = model.activateFlash;
       applyTile(tile, bar, AMB, flash ? "on" : "off", pressed);
@@ -868,65 +903,133 @@
     return tile;
   }
 
-  function axlesAndAction() {
-    return zone("AXLES & ACTION", "",
-      lensTile({ ctl: "cab_deck_btn_014", l1: "ENGINE", l2: "BRAKE", color: AMB, indicator: "engine_brake", icon: ICON.engineBrake, onText: "ON", offText: "OFF" }),
-      lensTile({ ctl: "cab_deck_btn_015", l1: "DIFF", l2: "LOCK", color: AMB, indicator: "diff_lock", icon: ICON.diffLock, onText: "LOCKED", offText: "UNLOCKED" }),
-      lensTile({ ctl: "cab_deck_btn_016", l1: "LIFT", l2: "AXLE", color: AMB, indicator: "lift_axle", icon: ICON.liftAxle, onText: "RAISED", offText: "LOWERED" }),
-      lensTile({ ctl: "cab_deck_btn_017", l1: "TRAILER", l2: "AXLE", color: AMB, indicator: "trailer_lift_axle", icon: ICON.trailerAxle, onText: "RAISED", offText: "LOWERED" }),
-      activateTile());
-  }
+  // ENGINE BRAKE, DIFF LOCK, LIFT AXLE and TRAILER AXLE are hidden from the dashboard
+  // (Oct 2026). Their config entries, vJoy buttons, indicators and SETUP bindings stay,
+  // so a lensTile line here brings any of them back.
 
-  function windowRocker() {
-    const half = (ctl, label, path, alignEnd) => {
-      const chevron = icon(path, 40, "0 0 24 24", { strokeWidth: 2.6 });
-      const text = h("div", { style: `display:flex;flex-direction:column;gap:4px;${alignEnd ? "align-items:flex-end" : ""}` },
-        h("div", { class: "lbl", style: `text-align:${alignEnd ? "right" : "left"}` }, "WINDOW", h("br"), label),
-        h("div", { class: "hint" }, "HOLD"));
-      const node = h("div", { class: "tile", "data-ctl": ctl, "data-kind": "hold",
-        style: `flex:1;flex-direction:row;gap:12px;border-radius:${alignEnd ? "3px 7px 7px 3px" : "7px 3px 3px 7px"}` },
-        ...(alignEnd ? [text, chevron] : [chevron, text]));
-      return { node, chevron, ctl };
-    };
-    const down = half("cab_deck_btn_011", "DOWN", ICON.chevronDown, false);
-    const up = half("cab_deck_btn_012", "UP", ICON.chevronUp, true);
-    const body = h("div", { style: "height:100%;border-radius:7px;overflow:hidden;display:flex;gap:3px;transition:transform .06s" }, down.node, up.node);
+  function lightTile(spec) {
+    // Compact lamp button: lens with icon, name, what it is, and OFF / DIM / FULL.
+    const { tile, bar } = tileNode(spec.ctl, "tap", "compact");
+    const lens = lensNode(38, { big: true, icon: spec.icon, iconSize: 26, spin: spec.spin });
+    const state = h("div", { class: "st", style: "font-size:12px" });
+    tile.append(lens.ring,
+      h("div", { class: "lbl", style: "font-size:15px" }, spec.label),
+      h("div", { class: "desc" }, spec.desc),
+      state);
     updaters.push(() => {
-      for (const part of [down, up]) {
-        const pressed = model.pressed.has(part.ctl);
-        applyTile(part.node, null, AMB, pressed ? "on" : "off", pressed);
-        part.node.style.transform = "none";
-        part.chevron.setAttribute("stroke", pressed ? "#FFFFFF" : "#5E646C");
-      }
-      const d = model.pressed.has(down.ctl), u = model.pressed.has(up.ctl);
-      body.style.transform = d && !u ? "rotateY(-5deg)" : u && !d ? "rotateY(5deg)" : "none";
+      const lvl = level(spec.indicator);
+      applyTile(tile, bar, spec.color, lvl, model.pressed.has(spec.ctl));
+      applyLens(lens.lens, spec.color, lvl);
+      lens.glyph.setAttribute("stroke", inkFor(spec.color, lvl));
+      state.textContent = lvl === "on" ? spec.onText : lvl === "dim" ? "DIM" : "OFF";
+      state.style.color = lvl === "off" ? MUTED : spec.color;
+      if (lens.spin) lens.spin.classList.toggle("on", lvl === "on");
     });
-    return h("div", { class: "span", style: "border-radius:10px;background:#0B0C0E;padding:4px;perspective:900px;box-shadow:inset 0 2px 6px rgba(0,0,0,.9),inset 0 0 0 1px rgba(255,255,255,.05)" }, body);
+    return tile;
   }
 
-  function hornTile() {
-    const ctl = "cab_deck_btn_007";
-    const { tile, bar } = tileNode(ctl, "hold", "span", "flex-direction:row;gap:22px");
-    const glyph = icon(ICON.horn, 84, "0 0 64 64", { strokeWidth: 3.4 });
-    tile.append(glyph, h("div", { style: "display:flex;flex-direction:column;gap:4px" },
-      h("div", { style: "font-size:24px;font-weight:600;letter-spacing:.12em;color:var(--legend)" }, "HORN"),
-      h("div", { class: "hint", style: "font-size:13px" }, "HOLD")));
+  function holdTile(ctl, label, path, viewBox, iconSize) {
+    // Compact hold button (window up / down, horn).
+    const { tile, bar } = tileNode(ctl, "hold", "compact");
+    const glyph = icon(path, iconSize, viewBox, { strokeWidth: viewBox === "0 0 64 64" ? 3.6 : 2.6 });
+    tile.append(glyph, h("div", { class: "lbl", style: "font-size:14px" }, ...label), h("div", { class: "hint", style: "font-size:10px" }, "HOLD"));
     updaters.push(() => {
       const pressed = model.pressed.has(ctl);
       applyTile(tile, bar, AMB, pressed ? "on" : "off", pressed);
-      glyph.setAttribute("stroke", pressed ? "#FFFFFF" : "#5E646C");
-      glyph.style.filter = pressed ? `drop-shadow(0 0 10px ${AMB})` : "none";
+      glyph.setAttribute("stroke", pressed ? "#FFFFFF" : "#8B9199");
+      glyph.style.filter = pressed ? `drop-shadow(0 0 8px ${AMB})` : "none";
     });
     return tile;
   }
 
   function cabZone() {
-    return zone("CAB", "c3",
-      lensTile({ ctl: "cab_deck_btn_020", l1: "BEACON", color: ORG, indicator: "beacon", icon: ICON.beacon, spin: true, onText: "ON", offText: "OFF" }),
-      lensTile({ ctl: "cab_deck_btn_021", l1: "AUX", l2: "FRONT", color: AMB, indicator: "aux_front", icon: ICON.aux, onText: "ON", offText: "OFF" }),
-      lensTile({ ctl: "cab_deck_btn_022", l1: "AUX", l2: "ROOF", color: AMB, indicator: "aux_roof", icon: ICON.aux, onText: "ON", offText: "OFF" }),
-      windowRocker(),
-      hornTile());
+    return h("div", { class: "zone" }, h("div", { class: "zone-in cab" },
+      h("div", { class: "span", style: "display:flex" }, h("div", { class: "zone-title" }, "CAB & ACTION")),
+      activateTile(),
+      lightTile({ ctl: "cab_deck_btn_020", label: "BEACON", desc: "AMBER WARNING", color: ORG, indicator: "beacon", icon: ICON.beacon, spin: true, onText: "ON" }),
+      lightTile({ ctl: "cab_deck_btn_021", label: "FRONT AUX", desc: "BUMPER LAMPS", color: AMB, indicator: "aux_front", icon: ICON.auxFront, onText: "FULL" }),
+      lightTile({ ctl: "cab_deck_btn_022", label: "ROOF AUX", desc: "ROOF LIGHT BAR", color: AMB, indicator: "aux_roof", icon: ICON.auxRoof, onText: "FULL" }),
+      h("div", { class: "cab-row" },
+        holdTile("cab_deck_btn_011", ["WIN ", "DOWN"], ICON.chevronDown, "0 0 24 24", 28),
+        holdTile("cab_deck_btn_012", ["WIN ", "UP"], ICON.chevronUp, "0 0 24 24", 28),
+        holdTile("cab_deck_btn_007", ["HORN"], ICON.horn, "0 0 64 64", 30))));
+  }
+
+  // --- Clock --------------------------------------------------------------
+
+  const DAY_NAMES = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
+  const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+  function analogClock(color, withSeconds) {
+    const face = h("div", { class: "clock-face" });
+    for (let i = 0; i < 60; i += 1) {
+      const major = i % 5 === 0;
+      face.append(h("div", { class: major ? "clock-tick major" : "clock-tick", style: `transform:rotate(${i * 6}deg)` }));
+    }
+    const hand = (cls) => {
+      const node = h("div", { class: `clock-hand ${cls}` });
+      face.append(node);
+      return node;
+    };
+    const hour = hand("hour"), minute = hand("minute"), second = withSeconds ? hand("second") : null;
+    hour.style.background = minute.style.background = color;
+    face.append(h("div", { class: "clock-pin" }), h("div", { class: "clock-glare" }));
+    const set = (minutes, seconds) => {
+      // minutes since midnight (may be fractional), seconds 0..59 for the second hand.
+      const shown = minutes !== null;
+      for (const node of [hour, minute, second]) if (node) node.style.opacity = shown ? "1" : "0";
+      if (!shown) return;
+      hour.style.transform = `rotate(${(minutes / 720) * 360}deg)`;
+      minute.style.transform = `rotate(${(minutes % 60) * 6}deg)`;
+      if (second) second.style.transform = `rotate(${seconds * 6}deg)`;
+    };
+    return { node: h("div", { class: "clock-bezel" }, face), set };
+  }
+
+  function clockHalf(tag, tagColor, color, withSeconds) {
+    const clock = analogClock(color, withSeconds);
+    const digital = h("div", { class: "clock-digital" });
+    const day = h("div", { class: "clock-day" });
+    const date = h("div", { class: "clock-date" });
+    const node = h("div", { class: "clock-half" }, clock.node,
+      h("div", { class: "clock-info" },
+        h("div", { class: "clock-tag", style: `color:${tagColor};border-color:${mix(tagColor, 55)};background:${mix(tagColor, 12)}` }, tag),
+        digital, day, date));
+    return { node, clock, digital, day, date };
+  }
+
+  function pad2(value) {
+    return String(value).padStart(2, "0");
+  }
+
+  function clockZone() {
+    // Game time: in-game minutes since 00:00 of day 1, which is a Monday. The game has no
+    // calendar date, only the day count. Real time: this tablet's local clock.
+    const game = clockHalf("IN-GAME", AMB, AMB, false);
+    const real = clockHalf("REAL TIME", BLU, "#E6E8EA", true);
+    updaters.push(() => {
+      const nav = model.online && model.game.telemetry && model.game.active ? model.indicators.nav : null;
+      if (nav && nav.clock_min > 0) {
+        const minutes = nav.clock_min % 1440;
+        game.clock.set(minutes, 0);
+        game.digital.textContent = `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`;
+        game.day.textContent = DAY_NAMES[Math.floor(nav.clock_min / 1440) % 7];
+        game.date.textContent = `DAY ${Math.floor(nav.clock_min / 1440) + 1}${model.game.paused ? " · PAUSED" : ""}`;
+      } else {
+        game.clock.set(null, 0);
+        game.digital.textContent = "--:--";
+        game.day.textContent = !model.online ? "NO LINK" : !model.game.telemetry ? "NO TELEMETRY" : "NOT IN CAB";
+        game.date.textContent = "";
+      }
+      const now = new Date();
+      real.clock.set(now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60, now.getSeconds());
+      real.digital.textContent = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+      real.day.textContent = DAY_NAMES[(now.getDay() + 6) % 7];
+      real.date.textContent = `${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+    });
+    return h("div", { class: "zone clock-zone" }, h("div", { class: "zone-in strip" },
+      h("div", { class: "title-row", style: "padding:0 4px;height:26px" }, h("div", { class: "zone-title" }, "CLOCK")),
+      h("div", { class: "clock-body" }, game.node, h("div", { class: "clock-sep" }), real.node)));
   }
 
   function stripZone(title, statusFn, switchNode, lamp) {
@@ -1030,12 +1133,16 @@
       const tired = n && n.rest_min <= 60;
       rest.value.textContent = n ? duration(n.rest_min) : "—";
       rest.value.style.color = tired ? AMB : "#E6E8EA";
-      rest.sub.textContent = n ? (tired ? "FIND A PLACE" : "UNTIL SLEEP") : "";
+      // Miles left before the rest stop, from the server's average pace over the last 50 mi.
+      if (!n || n.rest_min <= 0) rest.sub.textContent = "";
+      else if (n.rest_range_km === null || n.rest_range_km === undefined) rest.sub.textContent = "MEASURING PACE…";
+      else rest.sub.textContent = `≈ ${Math.round(n.rest_range_km * 0.621371)} MI`;
+      rest.sub.classList.toggle("strong", Boolean(n && n.rest_range_km));
       const late = n && n.deadline_min !== null && n.deadline_min < 0;
       const tight = n && n.deadline_min !== null && hasRoute && n.deadline_min < n.time_s / 60;
       due.value.textContent = n && n.deadline_min !== null ? (late ? `-${duration(-n.deadline_min)}` : duration(n.deadline_min)) : "—";
       due.value.style.color = late ? RED : tight ? AMB : "#E6E8EA";
-      due.sub.textContent = !n || n.deadline_min === null ? "NO JOB" : late ? "LATE" : tight ? "WON'T MAKE IT" : "LEFT";
+      due.sub.textContent = !n || n.deadline_min === null ? "NO JOB" : `DUE ${clockText(n.clock_min + n.deadline_min)}`;
       applyLens(lamp.lens, AMB, tired ? (model.phase ? "on" : "dim") : "off");
     });
     return stripZone("NAV", status, h("div", { class: "nav-body" }, dist.node, eta.node, rest.node, due.node), lamp);
@@ -1049,7 +1156,7 @@
     topRow.prepend(blinkerTile("cab_deck_btn_003", "LEFT", ICON.arrowLeft, "blinker_left", "left"));
     topRow.append(blinkerTile("cab_deck_btn_004", "RIGHT", ICON.arrowRight, "blinker_right", "right"));
     dash.append(
-      h("div", { class: "main-row" }, lightsAndSignals(), engineAndAir(), axlesAndAction(), cabZone()),
+      h("div", { class: "main-row" }, lightsAndSignals(), engineAndAir(), h("div", { class: "stack" }, clockZone(), cabZone())),
       bottomRow());
   }
 

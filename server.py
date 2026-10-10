@@ -47,6 +47,16 @@ TELEMETRY_RETRY_S = 5.0
 # Telemetry needs a moment to reflect a press; skip corrections right after one.
 SWITCH_SETTLE_S = 1.0
 
+# Driving pace for the "miles before rest" estimate.
+PACE_WINDOW_KM = 80.47        # average over the last 50 miles
+PACE_MIN_KM = 3.0             # need this much driving before giving an estimate
+PACE_MIN_MINUTES = 5          # ... and this many in-game driving minutes
+PACE_IDLE_MINUTES = 10        # a standstill longer than this is a break, not driving
+PACE_MAX_STEP_MINUTES = 30    # a bigger clock jump means sleep, ferry or train: start over
+PACE_MAX_STEP_KM = 5.0        # a bigger odometer jump means a teleport: start over
+PACE_MOVING_KM = 0.01         # odometer change that counts as moving within one game minute
+PACE_MAX_SAMPLES = 5000
+
 INDICATORS = (
     "engine",
     "lights",
@@ -110,6 +120,21 @@ class SwitchState:
 
 
 @dataclass
+class DrivePace:
+    """Average driving speed over the last PACE_WINDOW_KM, in in-game time.
+
+    samples holds (odometer km, cumulative driving minutes), one per in-game minute
+    of movement. Long standstills do not add driving minutes.
+    """
+
+    samples: deque = field(default_factory=lambda: deque(maxlen=PACE_MAX_SAMPLES))
+    last_clock: int | None = None
+    last_odometer: float = 0.0
+    driving_minutes: int = 0
+    idle_minutes: int = 0
+
+
+@dataclass
 class DeckState:
     config: dict[str, Any]
     set_button: SetButton
@@ -126,6 +151,7 @@ class DeckState:
     game: dict[str, Any] = field(default_factory=lambda: {"telemetry": False})
     indicators: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_state_message: dict[str, Any] | None = None
+    pace: DrivePace = field(default_factory=DrivePace)
 
     @property
     def controls_by_id(self) -> dict[str, dict[str, Any]]:
@@ -558,6 +584,61 @@ def compute_nav(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def reset_pace(pace: DrivePace, clock: int, odometer: float) -> None:
+    pace.samples.clear()
+    pace.last_clock = clock
+    pace.last_odometer = odometer
+    pace.driving_minutes = 0
+    pace.idle_minutes = 0
+    pace.samples.append((odometer, 0))
+
+
+def record_pace(pace: DrivePace, data: dict[str, Any]) -> None:
+    """Add one in-game minute of driving to the pace window. Call on every poll."""
+    clock = int(data.get("time_abs") or 0)
+    odometer = float(data.get("truckOdometer") or 0.0)
+    if data.get("paused") or clock <= 0:
+        return
+    if pace.last_clock is None:
+        reset_pace(pace, clock, odometer)
+        return
+    step = clock - pace.last_clock
+    moved = odometer - pace.last_odometer
+    if step < 0 or step > PACE_MAX_STEP_MINUTES or abs(moved) > PACE_MAX_STEP_KM:
+        log.info("Drive pace reset: clock %+d min, odometer %+.1f km.", step, moved)
+        reset_pace(pace, clock, odometer)
+        return
+    if step == 0:
+        return
+    if moved >= PACE_MOVING_KM:
+        # A stop that ended within PACE_IDLE_MINUTES (lights, junctions) counts as driving;
+        # a longer one was a break and is left out.
+        if pace.idle_minutes <= PACE_IDLE_MINUTES:
+            pace.driving_minutes += pace.idle_minutes
+        pace.idle_minutes = 0
+        pace.driving_minutes += step
+    else:
+        pace.idle_minutes += step
+    pace.last_clock = clock
+    pace.last_odometer = odometer
+    if moved >= PACE_MOVING_KM:
+        pace.samples.append((odometer, pace.driving_minutes))
+    while len(pace.samples) > 2 and odometer - pace.samples[1][0] >= PACE_WINDOW_KM:
+        pace.samples.popleft()
+
+
+def pace_estimate(pace: DrivePace) -> dict[str, Any]:
+    """Average speed in km/h over the window, or None while there is too little driving."""
+    if len(pace.samples) < 2:
+        return {"avg_kmh": None, "window_km": 0.0}
+    first_km, first_min = pace.samples[0]
+    last_km, last_min = pace.samples[-1]
+    distance, minutes = last_km - first_km, last_min - first_min
+    if distance < PACE_MIN_KM or minutes < PACE_MIN_MINUTES:
+        return {"avg_kmh": None, "window_km": round(distance, 1)}
+    return {"avg_kmh": round(distance / minutes * 60, 1), "window_km": round(distance, 1)}
+
+
 def update_from_telemetry(state: DeckState, data: dict[str, Any] | None) -> None:
     if data is None:
         state.game = {"telemetry": False}
@@ -566,7 +647,18 @@ def update_from_telemetry(state: DeckState, data: dict[str, Any] | None) -> None
     active = bool(data.get("sdkActive"))
     state.game = {"telemetry": True, "active": active, "paused": bool(data.get("paused"))}
     state.indicators = compute_indicators(data) if active else {}
+    if active:
+        record_pace(state.pace, data)
+        add_rest_range(state.indicators["nav"], pace_estimate(state.pace))
     correct_switches(state)
+
+
+def add_rest_range(nav: dict[str, Any], pace: dict[str, Any]) -> None:
+    """Miles the truck can still cover before the rest stop at the recent pace."""
+    nav["avg_kmh"] = pace["avg_kmh"]
+    nav["pace_window_km"] = pace["window_km"]
+    rest = nav["rest_min"]
+    nav["rest_range_km"] = round(pace["avg_kmh"] * rest / 60, 1) if pace["avg_kmh"] and rest > 0 else None
 
 
 def correct_switches(state: DeckState) -> None:
