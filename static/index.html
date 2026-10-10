@@ -300,7 +300,9 @@
   .lever-fill { left: var(--pad); bottom: 22px; height: 12px; border-radius: 6px; background: linear-gradient(180deg, #F6C878, #D08A2A); box-shadow: 0 0 12px rgba(240,180,96,.7); }
   .lever-tick { bottom: 14px; width: 2px; height: 28px; margin-left: -1px; background: rgba(228,220,196,.35); }
   .lever-knob {
+    left: var(--pad);
     bottom: 2px;
+    will-change: transform;
     width: 52px;
     height: 52px;
     margin-left: -26px;
@@ -322,7 +324,8 @@
     background-repeat: no-repeat;
     box-shadow: inset 0 2px 3px rgba(255,255,255,.1), inset 0 -2px 4px rgba(0,0,0,.8);
   }
-  .lever.settled .lever-knob, .lever.settled .lever-fill { transition: left .18s cubic-bezier(.3,1.2,.5,1), width .18s cubic-bezier(.3,1.2,.5,1); }
+  .lever.settled .lever-knob { transition: transform .18s cubic-bezier(.3,1.2,.5,1); }
+  .lever.settled .lever-fill { transition: width .18s cubic-bezier(.3,1.2,.5,1); }
   .seg-bar { position: absolute; left: 16px; right: 16px; top: 7px; height: 4px; border-radius: 2px; }
   .seg-label { font-weight: 600; letter-spacing: .06em; }
   .seg-sub { font-size: 13px; font-weight: 600; letter-spacing: .1em; }
@@ -496,6 +499,30 @@
 
   // --- DOM helpers --------------------------------------------------------
 
+  // Updaters run on every render. Writing an unchanged value still makes the browser
+  // recalculate style (and for text, layout), so each write is skipped when nothing changed.
+  function setStyle(node, prop, value) {
+    const cache = node.styleCache || (node.styleCache = {});
+    if (cache[prop] === value) return;
+    cache[prop] = value;
+    node.style[prop] = value;
+  }
+
+  function setText(node, value) {
+    const text = String(value);
+    if (node.textCache === text) return;
+    node.textCache = text;
+    node.textContent = text;
+  }
+
+  function setAttr(node, name, value) {
+    const key = `attr:${name}`;
+    const cache = node.styleCache || (node.styleCache = {});
+    if (cache[key] === value) return;
+    cache[key] = value;
+    node.setAttribute(name, value);
+  }
+
   function h(tag, props, ...children) {
     const isSvg = tag === "svg" || tag === "path";
     const node = isSvg ? document.createElementNS(SVG_NS, tag) : document.createElement(tag);
@@ -553,8 +580,8 @@
 
   function applyLens(lens, color, level) {
     const style = lensStyle(color, level);
-    lens.style.background = style.bg;
-    lens.style.boxShadow = style.sh;
+    setStyle(lens, "background", style.bg);
+    setStyle(lens, "boxShadow", style.sh);
   }
 
   function applyTile(tile, bar, color, level, pressed) {
@@ -563,12 +590,12 @@
     if (on) shadow += `, inset 0 0 0 1.5px ${mix(color, 70)}, 0 0 36px -2px ${mix(color, 35)}, inset 0 0 50px ${mix(color, 7)}`;
     else if (dim) shadow += `, inset 0 0 0 1.5px ${mix(color, 35)}`;
     if (pressed) shadow = "inset 0 3px 10px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.22), 0 2px 4px rgba(0,0,0,.5)" + (on ? `, 0 0 36px -2px ${mix(color, 35)}` : "");
-    tile.style.background = pressed ? "var(--key-pressed)" : "var(--key)";
-    tile.style.boxShadow = shadow;
-    tile.style.transform = pressed ? "perspective(600px) rotateX(7deg) scale(.985)" : "none";
+    setStyle(tile, "background", pressed ? "var(--key-pressed)" : "var(--key)");
+    setStyle(tile, "boxShadow", shadow);
+    setStyle(tile, "transform", pressed ? "perspective(600px) rotateX(7deg) scale(.985)" : "none");
     if (bar) {
-      bar.style.background = on ? color : dim ? mix(color, 45) : "#2A2E34";
-      bar.style.boxShadow = on ? `0 0 10px ${color}` : "none";
+      setStyle(bar, "background", on ? color : dim ? mix(color, 45) : "#2A2E34");
+      setStyle(bar, "boxShadow", on ? `0 0 10px ${color}` : "none");
     }
   }
 
@@ -600,9 +627,9 @@
       const lvl = spec.level ? spec.level() : level(spec.indicator);
       applyTile(tile, bar, spec.color, lvl, model.pressed.has(spec.ctl));
       applyLens(lens.lens, spec.color, lvl);
-      lens.glyph.setAttribute("stroke", inkFor(spec.color, lvl));
-      state.textContent = lvl === "on" ? spec.onText : lvl === "dim" ? (spec.dimText || "DIM") : spec.offText;
-      state.style.color = lvl === "off" ? MUTED : spec.color;
+      setAttr(lens.glyph, "stroke", inkFor(spec.color, lvl));
+      setText(state, lvl === "on" ? spec.onText : lvl === "dim" ? (spec.dimText || "DIM") : spec.offText);
+      setStyle(state, "color", lvl === "off" ? MUTED : spec.color);
       if (lens.spin) lens.spin.classList.toggle("on", lvl === "on");
     });
     return tile;
@@ -630,7 +657,7 @@
     updaters.push(() => {
       const lvl = blinkLevel(indicator);
       applyTile(tile, bar, GRN, lvl, model.pressed.has(ctl));
-      lit.style.opacity = { on: 1, dim: 0.35, off: 0 }[lvl];
+      setStyle(lit, "opacity", { on: 1, dim: 0.35, off: 0 }[lvl]);
     });
     return tile;
   }
@@ -660,17 +687,17 @@
         const pressed = model.pressed.has(s.key);
         const isPending = pending === s.position && pending !== current;
         const active = current === s.position && !isPending && pending === undefined;
-        s.seg.style.background = pressed ? "#353A42" : active ? `linear-gradient(180deg, ${mix(AMB, 16, "#22252A")}, ${mix(AMB, 8, "#191B1F")})` : "linear-gradient(180deg,#22252A,#191B1F)";
-        s.seg.style.boxShadow = (pressed ? "inset 0 2px 6px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.22)" : "inset 0 1px 0 rgba(255,255,255,.05), inset 0 -1px 0 rgba(0,0,0,.4)")
+        setStyle(s.seg, "background", pressed ? "#353A42" : active ? `linear-gradient(180deg, ${mix(AMB, 16, "#22252A")}, ${mix(AMB, 8, "#191B1F")})` : "linear-gradient(180deg,#22252A,#191B1F)");
+        setStyle(s.seg, "boxShadow", (pressed ? "inset 0 2px 6px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.22)" : "inset 0 1px 0 rgba(255,255,255,.05), inset 0 -1px 0 rgba(0,0,0,.4)")
           + (isPending ? `, inset 0 0 0 2px ${model.phase ? AMB : mix(AMB, 30)}` : "")
-          + (active ? `, inset 0 0 30px ${mix(AMB, 6)}` : "");
-        s.seg.style.transform = pressed ? "translateY(1px)" : "none";
-        s.text.style.color = active ? AMB : isPending ? "#F0CF8A" : "#9AA0A8";
-        s.sub.style.color = active ? mix(AMB, 70, "#fff") : "#5E646C";
-        s.bar.style.background = active ? AMB : isPending ? mix(AMB, 50) : "#2A2E34";
-        s.bar.style.boxShadow = active ? `0 0 10px ${AMB}` : "none";
+          + (active ? `, inset 0 0 30px ${mix(AMB, 6)}` : ""));
+        setStyle(s.seg, "transform", pressed ? "translateY(1px)" : "none");
+        setStyle(s.text, "color", active ? AMB : isPending ? "#F0CF8A" : "#9AA0A8");
+        setStyle(s.sub, "color", active ? mix(AMB, 70, "#fff") : "#5E646C");
+        setStyle(s.bar, "background", active ? AMB : isPending ? mix(AMB, 50) : "#2A2E34");
+        setStyle(s.bar, "boxShadow", active ? `0 0 10px ${AMB}` : "none");
       }
-      row.style.gridTemplateColumns = `repeat(${visible}, minmax(0, 1fr))`;
+      setStyle(row, "gridTemplateColumns", `repeat(${visible}, minmax(0, 1fr))`);
     });
     return row;
   }
@@ -688,7 +715,7 @@
     lever.append(rail, ...marks.map((m) => m.tick), fill, ...marks.map((m) => m.mark), knob);
     lever.dataset.count = String(spec.labels.length);
     const at = (frac) => `calc(${LEVER_PAD}px + (100% - ${2 * LEVER_PAD}px) * ${frac})`;
-    updaters.push(() => {
+    const paint = () => {
       const limit = spec.limit ? spec.limit() : spec.labels.length - 1;
       lever.dataset.limit = String(limit);
       const current = spec.current();
@@ -701,18 +728,26 @@
         const hidden = m.position > limit;
         m.mark.classList.toggle("hidden", hidden);
         m.tick.classList.toggle("hidden", hidden);
-        m.mark.style.left = m.tick.style.left = at(m.position / limit);
+        setStyle(m.mark, "left", at(m.position / limit));
+        setStyle(m.tick, "left", at(m.position / limit));
         const active = m.position === shown;
         const confirmed = active && !drag && pending === undefined;
-        m.text.style.color = confirmed ? AMB : active ? "#F0CF8A" : "rgba(228,220,196,.5)";
-        m.text.style.textShadow = confirmed ? `0 0 10px ${AMB}` : "none";
-        m.sub.style.color = active ? "#E4DCC4" : "rgba(228,220,196,.35)";
+        setStyle(m.text, "color", confirmed ? AMB : active ? "#F0CF8A" : "rgba(228,220,196,.5)");
+        setStyle(m.text, "textShadow", confirmed ? `0 0 10px ${AMB}` : "none");
+        setStyle(m.sub, "color", active ? "#E4DCC4" : "rgba(228,220,196,.35)");
       }
-      knob.style.left = at(frac);
-      knob.style.transform = drag ? "scale(1.08)" : "none";
-      fill.style.width = `calc((100% - ${2 * LEVER_PAD}px) * ${frac})`;
-      fill.style.opacity = shown > 0 || (drag && drag.frac > 0) ? "1" : "0";
-    });
+      // The knob moves with transform (no layout) and sits on its own compositor layer.
+      setStyle(knob, "transform", `translateX(${(frac * span).toFixed(1)}px)${drag ? " scale(1.08)" : ""}`);
+      setStyle(fill, "width", `${(frac * span).toFixed(1)}px`);
+      setStyle(fill, "opacity", shown > 0 || (drag && drag.frac > 0) ? "1" : "0");
+    };
+    let span = 0; // px between the first and last detent, in unscaled panel pixels
+    new ResizeObserver(() => {
+      span = Math.max(0, lever.offsetWidth - 2 * LEVER_PAD);
+      paint();
+    }).observe(lever);
+    lever.paintLever = paint;
+    updaters.push(paint);
     return lever;
   }
 
@@ -737,8 +772,8 @@
     const status = h("div", { style: "font-size:14px;font-weight:600;letter-spacing:.06em" });
     updaters.push(() => {
       const lvl = level("lights");
-      status.textContent = lvl === "on" ? "LOW BEAM" : lvl === "dim" ? "PARK" : "OFF";
-      status.style.color = lvl === "off" ? MUTED : AMB;
+      setText(status, lvl === "on" ? "LOW BEAM" : lvl === "dim" ? "PARK" : "OFF");
+      setStyle(status, "color", lvl === "off" ? MUTED : AMB);
     });
     const lights = h("div", { class: "well span" },
       h("div", { style: "display:flex;align-items:center;justify-content:space-between;padding:0 8px;height:22px" },
@@ -749,8 +784,8 @@
     const wipersState = switchStatus("wipers", "SPEED");
     updaters.push(() => {
       const { text, color } = wipersState();
-      wipersStatus.textContent = text;
-      wipersStatus.style.color = color;
+      setText(wipersStatus, text);
+      setStyle(wipersStatus, "color", color);
       applyLens(wipersLamp.lens, GRN, level("wipers"));
     });
     const wipers = h("div", { class: "well span" },
@@ -791,12 +826,12 @@
       applyTile(tile, bar, lvl === "on" ? GRN : AMB, lvl, pressed);
       applyLens(ign.lens, AMB, lvl === "dim" ? "on" : "off");
       applyLens(run.lens, GRN, lvl === "on" ? "on" : "off");
-      ignText.style.color = lvl === "dim" ? AMB : MUTED;
-      runText.style.color = lvl === "on" ? GRN : MUTED;
-      state.textContent = lvl === "on" ? "RUNNING" : lvl === "dim" ? "IGNITION" : "OFF";
-      state.style.color = lvl === "on" ? GRN : lvl === "dim" ? AMB : MUTED;
-      start.style.transform = pressed ? "translateY(3px)" : "none";
-      start.style.boxShadow = pressed ? "inset 0 3px 8px rgba(0,0,0,.8), 0 0 0 2px rgba(255,255,255,.22)" : "0 4px 0 #050505, 0 6px 8px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.1)";
+      setStyle(ignText, "color", lvl === "dim" ? AMB : MUTED);
+      setStyle(runText, "color", lvl === "on" ? GRN : MUTED);
+      setText(state, lvl === "on" ? "RUNNING" : lvl === "dim" ? "IGNITION" : "OFF");
+      setStyle(state, "color", lvl === "on" ? GRN : lvl === "dim" ? AMB : MUTED);
+      setStyle(start, "transform", pressed ? "translateY(3px)" : "none");
+      setStyle(start, "boxShadow", pressed ? "inset 0 3px 8px rgba(0,0,0,.8), 0 0 0 2px rgba(255,255,255,.22)" : "0 4px 0 #050505, 0 6px 8px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.1)");
     });
     return tile;
   }
@@ -820,10 +855,10 @@
       applyTile(tile, bar, spec.color, lvl, pressed);
       applyLens(lamp.lens, spec.color, lvl);
       const pulled = spec.pulledWhenOn ? on : !on;
-      knob.style.transform = pressed ? "scale(.92)" : pulled ? "scale(1.14) translateY(2px)" : "scale(1)";
-      knob.style.filter = pulled ? "drop-shadow(0 10px 7px rgba(0,0,0,.75))" : "drop-shadow(0 2px 2px rgba(0,0,0,.6)) saturate(.8)";
-      state.textContent = on ? spec.onText : spec.offText;
-      state.style.color = on ? spec.color : MUTED;
+      setStyle(knob, "transform", pressed ? "scale(.92)" : pulled ? "scale(1.14) translateY(2px)" : "scale(1)");
+      setStyle(knob, "filter", pulled ? "drop-shadow(0 10px 7px rgba(0,0,0,.75))" : "drop-shadow(0 2px 2px rgba(0,0,0,.6)) saturate(.8)");
+      setText(state, on ? spec.onText : spec.offText);
+      setStyle(state, "color", on ? spec.color : MUTED);
     });
     return tile;
   }
@@ -852,13 +887,13 @@
       const value = indicator ? indicator.value : 0;
       const kind = indicator ? indicator.state : "off";
       const emergency = kind === "emergency", warning = kind === "warning";
-      needle.style.transform = `translateY(-42px) rotate(${ang(value)}deg)`;
-      digits.textContent = indicator ? `${Math.round(value)} psi` : "--- psi";
-      digits.style.color = emergency ? RED : warning ? AMB : "#E6E8EA";
+      setStyle(needle, "transform", `translateY(-42px) rotate(${ang(value)}deg)`);
+      setText(digits, indicator ? `${Math.round(value)} psi` : "--- psi");
+      setStyle(digits, "color", emergency ? RED : warning ? AMB : "#E6E8EA");
       applyLens(lamp.lens, emergency ? RED : AMB, emergency ? (model.phase ? "on" : "dim") : warning ? "on" : "off");
-      lampText.style.color = emergency ? RED : warning ? AMB : "#5E646C";
-      state.textContent = !indicator ? "—" : emergency ? "EMERGENCY" : warning ? "WARNING" : "NORMAL";
-      state.style.color = emergency ? RED : warning ? AMB : GRN;
+      setStyle(lampText, "color", emergency ? RED : warning ? AMB : "#5E646C");
+      setText(state, !indicator ? "—" : emergency ? "EMERGENCY" : warning ? "WARNING" : "NORMAL");
+      setStyle(state, "color", emergency ? RED : warning ? AMB : GRN);
     });
     return h("div", { class: "well span", style: "display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:6px;padding:6px" },
       h("div", { style: "position:relative;width:112px;height:112px;border-radius:50%;padding:4px;background:linear-gradient(160deg,#f2f1ec,#8f8a80 40%,#2e2c29 60%,#c9c5bc);box-shadow:0 1px 0 rgba(255,255,255,.1),0 10px 18px -6px rgba(0,0,0,.9),0 2px 3px rgba(0,0,0,.6)" }, face),
@@ -895,10 +930,10 @@
     updaters.push(() => {
       const pressed = model.pressed.has(ctl), flash = model.activateFlash;
       applyTile(tile, bar, AMB, flash ? "on" : "off", pressed);
-      bezel.style.boxShadow = "0 1px 0 rgba(255,255,255,.1),0 12px 22px -6px rgba(0,0,0,.9),0 2px 3px rgba(0,0,0,.6)" + (flash ? `, 0 0 50px ${mix(AMB, 55)}` : "");
-      button.style.background = flash ? "radial-gradient(circle at 40% 30%,#FFE6A8,#F5B94A 50%,#B8761A)" : "radial-gradient(circle at 40% 30%,#FFD27A,#E8A13A 50%,#9A5F10)";
-      button.style.transform = pressed ? "translateY(6px) scale(.97)" : "none";
-      button.style.boxShadow = pressed ? "inset 0 4px 10px rgba(0,0,0,.6)" : flash ? `0 6px 0 #7A4A0C, 0 10px 14px rgba(0,0,0,.7), 0 0 40px ${mix(AMB, 70)}` : "0 6px 0 #7A4A0C, 0 10px 14px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.3)";
+      setStyle(bezel, "boxShadow", "0 1px 0 rgba(255,255,255,.1),0 12px 22px -6px rgba(0,0,0,.9),0 2px 3px rgba(0,0,0,.6)" + (flash ? `, 0 0 50px ${mix(AMB, 55)}` : ""));
+      setStyle(button, "background", flash ? "radial-gradient(circle at 40% 30%,#FFE6A8,#F5B94A 50%,#B8761A)" : "radial-gradient(circle at 40% 30%,#FFD27A,#E8A13A 50%,#9A5F10)");
+      setStyle(button, "transform", pressed ? "translateY(6px) scale(.97)" : "none");
+      setStyle(button, "boxShadow", pressed ? "inset 0 4px 10px rgba(0,0,0,.6)" : flash ? `0 6px 0 #7A4A0C, 0 10px 14px rgba(0,0,0,.7), 0 0 40px ${mix(AMB, 70)}` : "0 6px 0 #7A4A0C, 0 10px 14px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.3)");
     });
     return tile;
   }
@@ -920,9 +955,9 @@
       const lvl = level(spec.indicator);
       applyTile(tile, bar, spec.color, lvl, model.pressed.has(spec.ctl));
       applyLens(lens.lens, spec.color, lvl);
-      lens.glyph.setAttribute("stroke", inkFor(spec.color, lvl));
-      state.textContent = lvl === "on" ? spec.onText : lvl === "dim" ? "DIM" : "OFF";
-      state.style.color = lvl === "off" ? MUTED : spec.color;
+      setAttr(lens.glyph, "stroke", inkFor(spec.color, lvl));
+      setText(state, lvl === "on" ? spec.onText : lvl === "dim" ? "DIM" : "OFF");
+      setStyle(state, "color", lvl === "off" ? MUTED : spec.color);
       if (lens.spin) lens.spin.classList.toggle("on", lvl === "on");
     });
     return tile;
@@ -936,8 +971,8 @@
     updaters.push(() => {
       const pressed = model.pressed.has(ctl);
       applyTile(tile, bar, AMB, pressed ? "on" : "off", pressed);
-      glyph.setAttribute("stroke", pressed ? "#FFFFFF" : "#8B9199");
-      glyph.style.filter = pressed ? `drop-shadow(0 0 8px ${AMB})` : "none";
+      setAttr(glyph, "stroke", pressed ? "#FFFFFF" : "#8B9199");
+      setStyle(glyph, "filter", pressed ? `drop-shadow(0 0 8px ${AMB})` : "none");
     });
     return tile;
   }
@@ -977,11 +1012,11 @@
     const set = (minutes, seconds) => {
       // minutes since midnight (may be fractional), seconds 0..59 for the second hand.
       const shown = minutes !== null;
-      for (const node of [hour, minute, second]) if (node) node.style.opacity = shown ? "1" : "0";
+      for (const node of [hour, minute, second]) if (node) setStyle(node, "opacity", shown ? "1" : "0");
       if (!shown) return;
-      hour.style.transform = `rotate(${(minutes / 720) * 360}deg)`;
-      minute.style.transform = `rotate(${(minutes % 60) * 6}deg)`;
-      if (second) second.style.transform = `rotate(${seconds * 6}deg)`;
+      setStyle(hour, "transform", `rotate(${(minutes / 720) * 360}deg)`);
+      setStyle(minute, "transform", `rotate(${(minutes % 60) * 6}deg)`);
+      if (second) setStyle(second, "transform", `rotate(${seconds * 6}deg)`);
     };
     return { node: h("div", { class: "clock-bezel" }, face), set };
   }
@@ -1012,20 +1047,20 @@
       if (nav && nav.clock_min > 0) {
         const minutes = nav.clock_min % 1440;
         game.clock.set(minutes, 0);
-        game.digital.textContent = `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`;
-        game.day.textContent = DAY_NAMES[Math.floor(nav.clock_min / 1440) % 7];
-        game.date.textContent = `DAY ${Math.floor(nav.clock_min / 1440) + 1}${model.game.paused ? " · PAUSED" : ""}`;
+        setText(game.digital, `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`);
+        setText(game.day, DAY_NAMES[Math.floor(nav.clock_min / 1440) % 7]);
+        setText(game.date, `DAY ${Math.floor(nav.clock_min / 1440) + 1}${model.game.paused ? " · PAUSED" : ""}`);
       } else {
         game.clock.set(null, 0);
-        game.digital.textContent = "--:--";
-        game.day.textContent = !model.online ? "NO LINK" : !model.game.telemetry ? "NO TELEMETRY" : "NOT IN CAB";
-        game.date.textContent = "";
+        setText(game.digital, "--:--");
+        setText(game.day, !model.online ? "NO LINK" : !model.game.telemetry ? "NO TELEMETRY" : "NOT IN CAB");
+        setText(game.date, "");
       }
       const now = new Date();
       real.clock.set(now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60, now.getSeconds());
-      real.digital.textContent = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
-      real.day.textContent = DAY_NAMES[(now.getDay() + 6) % 7];
-      real.date.textContent = `${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+      setText(real.digital, `${pad2(now.getHours())}:${pad2(now.getMinutes())}`);
+      setText(real.day, DAY_NAMES[(now.getDay() + 6) % 7]);
+      setText(real.date, `${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`);
     });
     return h("div", { class: "zone clock-zone" }, h("div", { class: "zone-in strip" },
       h("div", { class: "title-row", style: "padding:0 4px;height:26px" }, h("div", { class: "zone-title" }, "CLOCK")),
@@ -1036,8 +1071,8 @@
     const status = h("div", { style: "font-size:14px;font-weight:600;letter-spacing:.06em" });
     updaters.push(() => {
       const { text, color } = statusFn();
-      status.textContent = text;
-      status.style.color = color;
+      setText(status, text);
+      setStyle(status, "color", color);
     });
     return h("div", { class: "zone" }, h("div", { class: "zone-in strip" },
       h("div", { class: "title-row", style: "padding:0 4px;height:26px" },
@@ -1074,14 +1109,14 @@
       const fuel = model.online ? model.indicators.fuel : null;
       const low = fuel && fuel.state === "warning";
       const frac = fuel && fuel.capacity ? Math.max(0, Math.min(1, fuel.value / fuel.capacity)) : 0;
-      range.textContent = fuel ? String(Math.round(fuel.range_km * MI_PER_KM)) : "---";
-      range.style.color = low ? AMB : "#E6E8EA";
-      fill.style.width = `${frac * 100}%`;
-      fill.style.background = low ? `linear-gradient(180deg, #F6C878, ${AMB})` : "linear-gradient(180deg, #8EF0B0, #3FB868)";
-      fill.style.boxShadow = low ? `0 0 12px ${mix(AMB, 70)}` : "0 0 10px rgba(79,211,122,.45)";
-      tank.textContent = fuel ? `${Math.round(fuel.value * GAL_PER_L)} / ${Math.round(fuel.capacity * GAL_PER_L)} gal` : "— gal";
+      setText(range, fuel ? String(Math.round(fuel.range_km * MI_PER_KM)) : "---");
+      setStyle(range, "color", low ? AMB : "#E6E8EA");
+      setStyle(fill, "width", `${frac * 100}%`);
+      setStyle(fill, "background", low ? `linear-gradient(180deg, #F6C878, ${AMB})` : "linear-gradient(180deg, #8EF0B0, #3FB868)");
+      setStyle(fill, "boxShadow", low ? `0 0 12px ${mix(AMB, 70)}` : "0 0 10px rgba(79,211,122,.45)");
+      setText(tank, fuel ? `${Math.round(fuel.value * GAL_PER_L)} / ${Math.round(fuel.capacity * GAL_PER_L)} gal` : "— gal");
       const mpg = fuel && fuel.avg_l_per_km > 0 ? MI_PER_KM / (fuel.avg_l_per_km * GAL_PER_L) : 0;
-      avg.textContent = mpg ? `${mpg.toFixed(1)} mpg` : "— mpg";
+      setText(avg, mpg ? `${mpg.toFixed(1)} mpg` : "— mpg");
       applyLens(lamp.lens, AMB, low ? (model.phase ? "on" : "dim") : "off");
     });
     const body = h("div", { class: "fuel-body" },
@@ -1126,23 +1161,23 @@
     updaters.push(() => {
       const n = nav();
       const hasRoute = n && n.distance_m > 0;
-      dist.value.textContent = hasRoute ? String(Math.round(n.distance_m * MI_PER_M)) : "---";
-      dist.sub.textContent = n && n.planned_km ? `MI · OF ${Math.round(n.planned_km * 0.621371)}` : "MI";
-      eta.value.textContent = hasRoute ? duration(n.time_s / 60) : "—";
-      eta.sub.textContent = hasRoute ? clockText(n.clock_min + Math.round(n.time_s / 60)) : "";
+      setText(dist.value, hasRoute ? String(Math.round(n.distance_m * MI_PER_M)) : "---");
+      setText(dist.sub, n && n.planned_km ? `MI · OF ${Math.round(n.planned_km * 0.621371)}` : "MI");
+      setText(eta.value, hasRoute ? duration(n.time_s / 60) : "—");
+      setText(eta.sub, hasRoute ? clockText(n.clock_min + Math.round(n.time_s / 60)) : "");
       const tired = n && n.rest_min <= 60;
-      rest.value.textContent = n ? duration(n.rest_min) : "—";
-      rest.value.style.color = tired ? AMB : "#E6E8EA";
+      setText(rest.value, n ? duration(n.rest_min) : "—");
+      setStyle(rest.value, "color", tired ? AMB : "#E6E8EA");
       // Miles left before the rest stop, from the server's average pace over the last 50 mi.
-      if (!n || n.rest_min <= 0) rest.sub.textContent = "";
-      else if (n.rest_range_km === null || n.rest_range_km === undefined) rest.sub.textContent = "MEASURING PACE…";
-      else rest.sub.textContent = `≈ ${Math.round(n.rest_range_km * 0.621371)} MI`;
+      if (!n || n.rest_min <= 0) setText(rest.sub, "");
+      else if (n.rest_range_km === null || n.rest_range_km === undefined) setText(rest.sub, "MEASURING PACE…");
+      else setText(rest.sub, `≈ ${Math.round(n.rest_range_km * 0.621371)} MI`);
       rest.sub.classList.toggle("strong", Boolean(n && n.rest_range_km));
       const late = n && n.deadline_min !== null && n.deadline_min < 0;
       const tight = n && n.deadline_min !== null && hasRoute && n.deadline_min < n.time_s / 60;
-      due.value.textContent = n && n.deadline_min !== null ? (late ? `-${duration(-n.deadline_min)}` : duration(n.deadline_min)) : "—";
-      due.value.style.color = late ? RED : tight ? AMB : "#E6E8EA";
-      due.sub.textContent = !n || n.deadline_min === null ? "NO JOB" : `DUE ${clockText(n.clock_min + n.deadline_min)}`;
+      setText(due.value, n && n.deadline_min !== null ? (late ? `-${duration(-n.deadline_min)}` : duration(n.deadline_min)) : "—");
+      setStyle(due.value, "color", late ? RED : tight ? AMB : "#E6E8EA");
+      setText(due.sub, !n || n.deadline_min === null ? "NO JOB" : `DUE ${clockText(n.clock_min + n.deadline_min)}`);
       applyLens(lamp.lens, AMB, tired ? (model.phase ? "on" : "dim") : "off");
     });
     return stripZone("NAV", status, h("div", { class: "nav-body" }, dist.node, eta.node, rest.node, due.node), lamp);
@@ -1178,14 +1213,14 @@
       h("div", { class: "plate-btn", id: "setup-btn" }, setupKnob));
     updaters.push(() => {
       applyLens(link.lens, model.online ? GRN : RED, model.online || model.phase ? "on" : "dim");
-      linkText.textContent = model.online ? "CONNECTED" : "RECONNECTING…";
-      linkText.style.color = model.online ? "#26241F" : "#8A1C14";
+      setText(linkText, model.online ? "CONNECTED" : "RECONNECTING…");
+      setStyle(linkText, "color", model.online ? "#26241F" : "#8A1C14");
       const g = model.game;
       const gameLevel = !model.online || !g.telemetry ? "off" : g.active && !g.paused ? "on" : "amb";
       applyLens(game.lens, gameLevel === "amb" ? AMB : GRN, gameLevel === "off" ? "off" : "on");
-      gameText.textContent = !model.online ? "—" : !g.telemetry ? "NO TELEMETRY" : !g.active ? "NOT RUNNING" : g.paused ? "PAUSED" : "IN CAB";
+      setText(gameText, !model.online ? "—" : !g.telemetry ? "NO TELEMETRY" : !g.active ? "NOT RUNNING" : g.paused ? "PAUSED" : "IN CAB");
       soundKnob.classList.toggle("on", model.sound);
-      soundIcon.setAttribute("d", model.sound ? ICON.soundOn : ICON.soundOff);
+      setAttr(soundIcon, "d", model.sound ? ICON.soundOn : ICON.soundOff);
       setupKnob.classList.toggle("on", model.setupOpen);
     });
   }
@@ -1346,7 +1381,7 @@
       renderQueued = false;
       dash.classList.toggle("offline", !model.online);
       topRow.classList.toggle("offline", !model.online);
-      dimmer.style.opacity = String((1 - model.bright) * 0.8);
+      setStyle(dimmer, "opacity", String((1 - model.bright) * 0.8));
       for (const update of updaters) update();
     });
   }
@@ -1490,9 +1525,10 @@
       if (!isOnline()) return;
       event.preventDefault();
       try { lever.setPointerCapture(event.pointerId); } catch (_) { /* pointer already gone */ }
-      activePointers.set(event.pointerId, { key: `lever:${lever.dataset.lever}`, kind: "lever", lever });
+      const entry = { key: `lever:${lever.dataset.lever}`, kind: "lever", lever, rect: null };
+      activePointers.set(event.pointerId, entry);
       model.drag = { id: lever.dataset.lever, frac: 0, position: -1 };
-      moveLever(lever, event.clientX);
+      moveLever(entry, event.clientX);
       return;
     }
 
@@ -1555,21 +1591,34 @@
 
   // --- Levers -------------------------------------------------------------
 
-  function moveLever(lever, clientX) {
+  let leverFrame = 0;
+
+  function moveLever(entry, clientX) {
     // Pointer position -> fraction of the detent span; works under the panel's CSS scale.
-    const rect = lever.getBoundingClientRect();
-    const pad = LEVER_PAD * rect.width / lever.offsetWidth;
+    // The lever's box is measured once per gesture (entry.rect) to avoid forced layouts.
+    const lever = entry.lever;
+    if (!entry.rect) {
+      const rect = lever.getBoundingClientRect();
+      entry.rect = { left: rect.left, width: rect.width, pad: LEVER_PAD * rect.width / lever.offsetWidth };
+    }
+    const { left, width, pad } = entry.rect;
     const limit = Number(lever.dataset.limit);
-    const frac = Math.max(0, Math.min(1, (clientX - rect.left - pad) / (rect.width - 2 * pad)));
+    const frac = Math.max(0, Math.min(1, (clientX - left - pad) / (width - 2 * pad)));
     const position = Math.round(frac * limit);
     if (position !== model.drag.position) click("detent"); // one click per detent passed
     model.drag = { id: lever.dataset.lever, frac, position };
-    render();
+    // Only the dragged lever changes while the finger moves; skip the full-panel render.
+    if (!leverFrame) {
+      leverFrame = requestAnimationFrame(() => {
+        leverFrame = 0;
+        if (model.drag) lever.paintLever();
+      });
+    }
   }
 
   panel.addEventListener("pointermove", (event) => {
     const entry = activePointers.get(event.pointerId);
-    if (entry && entry.kind === "lever" && model.drag) moveLever(entry.lever, event.clientX);
+    if (entry && entry.kind === "lever" && model.drag) moveLever(entry, event.clientX);
   });
 
   function releaseLever(commit) {
@@ -1690,7 +1739,7 @@
   }
 
   function onFullscreenChange() {
-    fsPath.setAttribute("d", document.fullscreenElement || document.webkitFullscreenElement ? ICON.fsExit : ICON.fsEnter);
+    setAttr(fsPath, "d", document.fullscreenElement || document.webkitFullscreenElement ? ICON.fsExit : ICON.fsEnter);
     fit();
   }
   document.addEventListener("fullscreenchange", onFullscreenChange);
