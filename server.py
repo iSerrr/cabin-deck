@@ -57,7 +57,6 @@ INDICATORS = (
     "park_brake",
     "wipers",
     "trailer",
-    "retarder",
     "engine_brake",
     "diff_lock",
     "lift_axle",
@@ -66,10 +65,11 @@ INDICATORS = (
     "aux_front",
     "aux_roof",
     "air_pressure",
+    "fuel",
 )
-GAUGE_INDICATORS = ("air_pressure",)
+GAUGE_INDICATORS = ("air_pressure", "fuel")
 # Switches whose position the game reports exactly (instead of on/off only).
-POSITION_SOURCES = ("retarder", "lights")
+POSITION_SOURCES = ("lights",)
 
 log = logging.getLogger("cab_deck")
 
@@ -485,12 +485,6 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     else:
         lights = {"level": "off", "value": 0}
 
-    retarder_value = int(data.get("retarderBrake") or 0)
-    retarder = {
-        "level": "on" if retarder_value else "off",
-        "value": retarder_value,
-        "max": int(data.get("retarderStepCount") or 0),
-    }
 
     # truck-telemetry overwrites the float warning threshold with the bool flag of the same name.
     if data.get("airPressureEmergency"):
@@ -506,6 +500,16 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "state": air_state,
     }
 
+    # SDK units: litres, km and litres per km.
+    fuel = {
+        "level": "on" if data.get("fuelWarning") else "off",
+        "value": round(float(data.get("fuel") or 0.0), 1),
+        "capacity": round(float(data.get("fuelCapacity") or 0.0), 1),
+        "range_km": round(float(data.get("fuelRange") or 0.0), 1),
+        "avg_l_per_km": round(float(data.get("fuelAvgConsumption") or 0.0), 4),
+        "state": "warning" if data.get("fuelWarning") else "ok",
+    }
+
     trailers = data.get("trailer") or [{}]
     hazard_phase = data.get("blinkerLeftOn") or data.get("blinkerRightOn")
     return {
@@ -518,7 +522,6 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "park_brake": flag(data.get("parkBrake")),
         "wipers": flag(data.get("wipers")),
         "trailer": flag(trailers[0].get("attached"), "CONNECTED"),
-        "retarder": retarder,
         "engine_brake": flag(data.get("motorBrake")),
         "diff_lock": flag(data.get("differentialLock"), "LOCKED"),
         "lift_axle": flag(data.get("liftAxleIndicator"), "RAISED"),
@@ -527,6 +530,7 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "aux_front": three_state(data.get("lightsAuxFront")),
         "aux_roof": three_state(data.get("lightsAuxRoof")),
         "air_pressure": air_pressure,
+        "fuel": fuel,
     }
 
 

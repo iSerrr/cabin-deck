@@ -20,11 +20,11 @@
     {"id": "cab_deck_btn_015", "label": "DIFF LOCK", "type": "tap", "indicator": "diff_lock", "action": "Differential lock"},
     {"id": "cab_deck_btn_016", "label": "LIFT AXLE", "type": "tap", "indicator": "lift_axle", "action": "Lift / drop axle"},
     {"id": "cab_deck_btn_017", "label": "TRAILER AXLE", "type": "tap", "indicator": "trailer_lift_axle", "action": "Lift / drop trailer axle"},
-    {"id": "retarder", "label": "RETARDER", "type": "switch", "positions": ["OFF", "1", "2", "3", "4", "5"], "forward": "cab_deck_btn_018", "back": "cab_deck_btn_019", "indicator": "retarder", "position_source": "retarder", "forward_action": "Retarder increase", "back_action": "Retarder decrease"},
     {"id": "cab_deck_btn_020", "label": "BEACON", "type": "tap", "indicator": "beacon", "action": "Beacon"},
     {"id": "cab_deck_btn_021", "label": "AUX FRONT", "type": "tap", "indicator": "aux_front", "action": "Front auxiliary lights"},
     {"id": "cab_deck_btn_022", "label": "AUX ROOF", "type": "tap", "indicator": "aux_roof", "action": "Roof auxiliary lights"},
     {"id": "cab_deck_btn_023", "label": "ACTIVATE", "type": "tap", "action": "Activate"},
-    {"id": "air", "label": "AIR PRESSURE", "type": "gauge", "indicator": "air_pressure", "min": 0, "max": 150}
+    {"id": "air", "label": "AIR PRESSURE", "type": "gauge", "indicator": "air_pressure", "min": 0, "max": 150},
+    {"id": "fuel", "label": "FUEL", "type": "gauge", "indicator": "fuel", "min": 0, "max": 1}
   ]
 }

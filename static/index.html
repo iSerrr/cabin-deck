@@ -76,7 +76,11 @@
   }
 
   /* Status plate */
-  .plate-wrap { height: 46px; flex: none; display: flex; justify-content: center; align-items: center; }
+  .plate-wrap { height: 58px; flex: none; display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; }
+  .plate-wrap > .blinker { height: 58px; width: 210px; flex-direction: row; gap: 14px; transition: opacity .4s; }
+  .plate-wrap > .blinker.left { justify-self: start; }
+  .plate-wrap > .blinker.right { justify-self: end; }
+  .plate-wrap.offline > .blinker { opacity: .28; pointer-events: none; }
   .plate-rim {
     padding: 2px;
     border-radius: 8px;
@@ -156,6 +160,17 @@
     box-shadow: inset 0 2px 8px rgba(0,0,0,.7), inset 0 0 0 1px rgba(0,0,0,.6);
   }
   .zone-in.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tall { grid-row: span 2; }
+  .fuel-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 170px minmax(0, 1fr) 150px; gap: 14px; align-items: center; padding: 0 6px; }
+  .fuel-big { font-size: 40px; font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; line-height: 1; }
+  .fuel-unit { font-size: 15px; font-weight: 700; letter-spacing: .12em; margin-left: 6px; }
+  .fuel-cap { font-size: 12px; font-weight: 700; letter-spacing: .18em; color: #8B9199; margin-bottom: 6px; }
+  .fuel-track { position: relative; height: 26px; border-radius: 6px; background: var(--track); box-shadow: inset 0 3px 8px rgba(0,0,0,.9), inset 0 0 0 1px #000; overflow: hidden; }
+  .fuel-fill { position: absolute; left: 0; top: 0; bottom: 0; transition: width .6s cubic-bezier(.4,0,.2,1), background .3s; }
+  .fuel-tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: rgba(0,0,0,.55); }
+  .fuel-scale { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; font-weight: 700; letter-spacing: .1em; color: rgba(228,220,196,.55); }
+  .fuel-stat { font-size: 15px; font-weight: 600; letter-spacing: .04em; color: var(--legend); font-variant-numeric: tabular-nums; }
+  .fuel-stat + .fuel-cap { margin-top: 10px; }
   .zone-in.strip { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px 8px; }
   .span { grid-column: 1 / -1; }
   .title-row { display: flex; align-items: center; justify-content: space-between; }
@@ -275,7 +290,7 @@
   .seg-sub { font-size: 13px; font-weight: 600; letter-spacing: .1em; }
 
   /* SETUP overlay */
-  #setup { position: absolute; left: 14px; right: 14px; top: 72px; bottom: 14px; display: none; }
+  #setup { position: absolute; left: 14px; right: 14px; top: 84px; bottom: 14px; display: none; }
   #panel.setup-open #setup { display: block; }
   #setup .zone { height: 100%; }
   #setup .zone-in { grid-template-rows: 24px repeat(4, minmax(0, 1fr)) 64px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
@@ -338,7 +353,7 @@
 </head>
 <body>
 <div id="stage"><div id="panel">
-  <div class="plate-wrap"><div class="plate-rim"><div class="plate" id="plate"></div></div></div>
+  <div class="plate-wrap" id="top-row"><div class="plate-rim"><div class="plate" id="plate"></div></div></div>
   <div id="dash"></div>
   <div id="setup"></div>
   <div id="dimmer"></div>
@@ -413,6 +428,7 @@
   const panel = document.getElementById("panel");
   const dash = document.getElementById("dash");
   const plate = document.getElementById("plate");
+  const topRow = document.getElementById("top-row");
   const setup = document.getElementById("setup");
   const dimmer = document.getElementById("dimmer");
   const fsButton = document.getElementById("fs-btn");
@@ -536,8 +552,8 @@
   }
 
   function lensTile(spec) {
-    const { tile, bar } = tileNode(spec.ctl, "tap");
-    const lens = lensNode(48, { big: true, icon: spec.icon, spin: spec.spin });
+    const { tile, bar } = tileNode(spec.ctl, "tap", spec.tall ? "tall" : "");
+    const lens = lensNode(spec.tall ? 64 : 48, { big: true, icon: spec.icon, spin: spec.spin });
     const state = h("div", { class: "st" });
     tile.append(lens.ring, h("div", { class: "lbl" }, spec.l1, spec.l2 ? h("br") : null, spec.l2 || ""), state);
     updaters.push(() => {
@@ -560,16 +576,17 @@
     return "off";
   }
 
-  function arrowTile(ctl, label, path, indicator) {
-    const { tile, bar } = tileNode(ctl, "tap");
-    const lit = h("svg", { viewBox: "0 0 84 64", style: "position:absolute;inset:0;width:100%;height:100%;transition:opacity .06s;filter:drop-shadow(0 0 12px #4FD37A)" },
+  function blinkerTile(ctl, label, path, indicator, side) {
+    // Compact blinker in the top row, arrow on the outer side.
+    const { tile, bar } = tileNode(ctl, "tap", `blinker ${side}`);
+    const lit = h("svg", { viewBox: "0 0 84 64", style: "position:absolute;inset:0;width:100%;height:100%;transition:opacity .06s;filter:drop-shadow(0 0 10px #4FD37A)" },
       h("path", { d: path, fill: "#86F2AA" }));
-    const art = h("div", { style: "position:relative;width:104px;height:78px" },
+    const art = h("div", { style: "position:relative;width:58px;height:44px;flex:none" },
       h("svg", { viewBox: "0 0 84 64", style: "position:absolute;inset:0;width:100%;height:100%" },
         h("path", { d: path, fill: "#1A2E22", stroke: "#0B140F", "stroke-width": 1 })),
       lit);
-    tile.style.gap = "10px";
-    tile.append(art, h("div", { class: "lbl" }, label));
+    const text = h("div", { class: "lbl", style: "font-size:16px" }, label);
+    tile.append(...(side === "left" ? [art, text] : [text, art]));
     updaters.push(() => {
       const lvl = blinkLevel(indicator);
       applyTile(tile, bar, GRN, lvl, model.pressed.has(ctl));
@@ -689,10 +706,8 @@
       switchControl({ id: "lights", labels: ["OFF", "PARK", "LOW"], subs: ["", "MARKER", "BEAM"], size: 20, current: () => switchPosition("lights") }));
     return zone("LIGHTS & SIGNALS", "",
       lights,
-      arrowTile("cab_deck_btn_003", "LEFT", ICON.arrowLeft, "blinker_left"),
-      arrowTile("cab_deck_btn_004", "RIGHT", ICON.arrowRight, "blinker_right"),
-      lensTile({ ctl: "cab_deck_btn_002", l1: "HIGH", l2: "BEAM", color: BLU, indicator: "high_beam", icon: ICON.highBeam, onText: "ON", offText: "OFF" }),
-      lensTile({ ctl: "cab_deck_btn_005", l1: "HAZARD", color: RED, indicator: "hazards", icon: ICON.hazard, onText: "ON", dimText: "ON", offText: "OFF" }));
+      lensTile({ ctl: "cab_deck_btn_002", l1: "HIGH", l2: "BEAM", color: BLU, indicator: "high_beam", icon: ICON.highBeam, onText: "ON", offText: "OFF", tall: true }),
+      lensTile({ ctl: "cab_deck_btn_005", l1: "HAZARD", color: RED, indicator: "hazards", icon: ICON.hazard, onText: "ON", dimText: "ON", offText: "OFF", tall: true }));
   }
 
   function smallLamp(size) {
@@ -918,23 +933,55 @@
     };
   }
 
+  function fuelZone() {
+    // ATS shows imperial units; the SDK reports litres, km and litres per km.
+    const MI_PER_KM = 0.621371, GAL_PER_L = 0.264172;
+    const lamp = smallLamp(20);
+    const range = h("span", { class: "fuel-big" });
+    const fill = h("div", { class: "fuel-fill" });
+    const ticks = [0.25, 0.5, 0.75].map((f) => h("div", { class: "fuel-tick", style: `left:${f * 100}%` }));
+    const tank = h("div", { class: "fuel-stat" });
+    const avg = h("div", { class: "fuel-stat" });
+    const status = () => {
+      const fuel = model.online ? model.indicators.fuel : null;
+      if (!fuel) return { text: "—", color: MUTED };
+      return fuel.state === "warning" ? { text: "LOW FUEL", color: AMB } : { text: `${Math.round(fuel.capacity ? fuel.value / fuel.capacity * 100 : 0)}%`, color: "#E4DCC4" };
+    };
+    updaters.push(() => {
+      const fuel = model.online ? model.indicators.fuel : null;
+      const low = fuel && fuel.state === "warning";
+      const frac = fuel && fuel.capacity ? Math.max(0, Math.min(1, fuel.value / fuel.capacity)) : 0;
+      range.textContent = fuel ? String(Math.round(fuel.range_km * MI_PER_KM)) : "---";
+      range.style.color = low ? AMB : "#E6E8EA";
+      fill.style.width = `${frac * 100}%`;
+      fill.style.background = low ? `linear-gradient(180deg, #F6C878, ${AMB})` : "linear-gradient(180deg, #8EF0B0, #3FB868)";
+      fill.style.boxShadow = low ? `0 0 12px ${mix(AMB, 70)}` : "0 0 10px rgba(79,211,122,.45)";
+      tank.textContent = fuel ? `${Math.round(fuel.value * GAL_PER_L)} / ${Math.round(fuel.capacity * GAL_PER_L)} gal` : "— gal";
+      const mpg = fuel && fuel.avg_l_per_km > 0 ? MI_PER_KM / (fuel.avg_l_per_km * GAL_PER_L) : 0;
+      avg.textContent = mpg ? `${mpg.toFixed(1)} mpg` : "— mpg";
+      applyLens(lamp.lens, AMB, low ? (model.phase ? "on" : "dim") : "off");
+    });
+    const body = h("div", { class: "fuel-body" },
+      h("div", {}, h("div", { class: "fuel-cap" }, "RANGE"), h("div", {}, range, h("span", { class: "fuel-unit", style: "color:#8B9199" }, "MI"))),
+      h("div", {}, h("div", { class: "fuel-track" }, fill, ...ticks),
+        h("div", { class: "fuel-scale" }, h("span", {}, "E"), h("span", {}, "¼"), h("span", {}, "½"), h("span", {}, "¾"), h("span", {}, "F"))),
+      h("div", {}, h("div", { class: "fuel-cap" }, "TANK"), tank, h("div", { class: "fuel-cap" }, "AVG"), avg));
+    return stripZone("FUEL", status, body, lamp);
+  }
+
   function bottomRow() {
     const wipersLamp = smallLamp(20);
     updaters.push(() => applyLens(wipersLamp.lens, GRN, level("wipers")));
-    const retarderLimit = () => {
-      const indicator = model.indicators.retarder;
-      return indicator && indicator.max ? Math.max(1, Math.min(5, indicator.max)) : 3;
-    };
     return h("div", { class: "bottom-row" },
       stripZone("WIPERS", switchStatus("wipers", "SPEED"),
         switchControl({ id: "wipers", labels: ["OFF", "1", "2", "3"], subs: ["", "INT", "LOW", "HIGH"], size: 28, current: () => switchPosition("wipers") }),
         wipersLamp),
-      stripZone("RETARDER", switchStatus("retarder", "STAGE"),
-        switchControl({ id: "retarder", labels: ["OFF", "1", "2", "3", "4", "5"], subs: ["", "STAGE", "STAGE", "STAGE", "STAGE", "STAGE"], size: 28,
-          current: () => switchPosition("retarder"), limit: retarderLimit })));
+      fuelZone());
   }
 
   function buildDash() {
+    topRow.prepend(blinkerTile("cab_deck_btn_003", "LEFT", ICON.arrowLeft, "blinker_left", "left"));
+    topRow.append(blinkerTile("cab_deck_btn_004", "RIGHT", ICON.arrowRight, "blinker_right", "right"));
     dash.append(
       h("div", { class: "main-row" }, lightsAndSignals(), engineAndAir(), axlesAndAction(), cabZone()),
       bottomRow());
@@ -1125,6 +1172,7 @@
     requestAnimationFrame(() => {
       renderQueued = false;
       dash.classList.toggle("offline", !model.online);
+      topRow.classList.toggle("offline", !model.online);
       dimmer.style.opacity = String((1 - model.bright) * 0.8);
       for (const update of updaters) update();
     });
