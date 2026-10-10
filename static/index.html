@@ -140,7 +140,7 @@
   #dash.offline { opacity: .28; pointer-events: none; }
   #panel.setup-open #dash { visibility: hidden; }
   .main-row { flex: 1; min-height: 0; display: grid; grid-template-columns: 336fr 233fr 233fr 327fr; gap: 12px; }
-  .bottom-row { height: 162px; flex: none; display: grid; grid-template-columns: 430fr 724fr; gap: 12px; }
+  .bottom-row { height: 162px; flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .zone {
     min-height: 0;
     padding: 3px;
@@ -171,6 +171,11 @@
   .fuel-scale { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; font-weight: 700; letter-spacing: .1em; color: rgba(228,220,196,.55); }
   .fuel-stat { font-size: 15px; font-weight: 600; letter-spacing: .04em; color: var(--legend); font-variant-numeric: tabular-nums; }
   .fuel-stat + .fuel-cap { margin-top: 10px; }
+  .nav-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.25fr 1fr 1fr 1fr; gap: 8px; align-items: stretch; padding: 2px 2px 0; }
+  .nav-cell { border-radius: 8px; background: rgba(0,0,0,.28); box-shadow: inset 0 2px 6px rgba(0,0,0,.6); padding: 10px 10px 8px; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+  .nav-val { font-size: 26px; font-weight: 700; letter-spacing: .01em; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; color: #E6E8EA; }
+  .nav-val.big { font-size: 34px; }
+  .nav-sub { font-size: 12px; font-weight: 600; letter-spacing: .06em; color: #8B9199; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .zone-in.strip { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px 8px; }
   .span { grid-column: 1 / -1; }
   .title-row { display: flex; align-items: center; justify-content: space-between; }
@@ -704,10 +709,25 @@
       h("div", { style: "display:flex;align-items:center;justify-content:space-between;padding:0 8px;height:22px" },
         h("div", { style: "font-size:18px;font-weight:600;letter-spacing:.08em;color:var(--legend)" }, "LIGHTS"), status),
       switchControl({ id: "lights", labels: ["OFF", "PARK", "LOW"], subs: ["", "MARKER", "BEAM"], size: 20, current: () => switchPosition("lights") }));
+    const wipersStatus = h("div", { style: "font-size:14px;font-weight:600;letter-spacing:.06em" });
+    const wipersLamp = smallLamp(16);
+    const wipersState = switchStatus("wipers", "SPEED");
+    updaters.push(() => {
+      const { text, color } = wipersState();
+      wipersStatus.textContent = text;
+      wipersStatus.style.color = color;
+      applyLens(wipersLamp.lens, GRN, level("wipers"));
+    });
+    const wipers = h("div", { class: "well span" },
+      h("div", { style: "display:flex;align-items:center;justify-content:space-between;padding:0 8px;height:22px" },
+        h("div", { style: "font-size:18px;font-weight:600;letter-spacing:.08em;color:var(--legend)" }, "WIPERS"),
+        h("div", { style: "display:flex;align-items:center;gap:8px" }, wipersStatus, wipersLamp.ring)),
+      switchControl({ id: "wipers", labels: ["OFF", "1", "2", "3"], subs: ["", "INT", "LOW", "HIGH"], size: 20, current: () => switchPosition("wipers") }));
     return zone("LIGHTS & SIGNALS", "",
       lights,
-      lensTile({ ctl: "cab_deck_btn_002", l1: "HIGH", l2: "BEAM", color: BLU, indicator: "high_beam", icon: ICON.highBeam, onText: "ON", offText: "OFF", tall: true }),
-      lensTile({ ctl: "cab_deck_btn_005", l1: "HAZARD", color: RED, indicator: "hazards", icon: ICON.hazard, onText: "ON", dimText: "ON", offText: "OFF", tall: true }));
+      wipers,
+      lensTile({ ctl: "cab_deck_btn_002", l1: "HIGH", l2: "BEAM", color: BLU, indicator: "high_beam", icon: ICON.highBeam, onText: "ON", offText: "OFF" }),
+      lensTile({ ctl: "cab_deck_btn_005", l1: "HAZARD", color: RED, indicator: "hazards", icon: ICON.hazard, onText: "ON", dimText: "ON", offText: "OFF" }));
   }
 
   function smallLamp(size) {
@@ -969,14 +989,60 @@
     return stripZone("FUEL", status, body, lamp);
   }
 
+  function duration(minutes) {
+    // In-game minutes as "5h 20m" or "45m".
+    const total = Math.max(0, Math.round(minutes));
+    const hours = Math.floor(total / 60), rest = total % 60;
+    return hours ? `${hours}h ${String(rest).padStart(2, "0")}m` : `${rest}m`;
+  }
+
+  function clockText(minutes) {
+    const days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+    const day = days[Math.floor(minutes / 1440) % 7];
+    const time = minutes % 1440;
+    return `${day} ${String(Math.floor(time / 60)).padStart(2, "0")}:${String(time % 60).padStart(2, "0")}`;
+  }
+
+  function navZone() {
+    // Route distance comes in metres and route time in in-game seconds; job times in in-game minutes.
+    const MI_PER_M = 0.000621371;
+    const lamp = smallLamp(20);
+    const cell = (caption, big) => {
+      const value = h("div", { class: big ? "nav-val big" : "nav-val" });
+      const sub = h("div", { class: "nav-sub" });
+      return { node: h("div", { class: "nav-cell" }, h("div", { class: "fuel-cap", style: "margin:0" }, caption), value, sub), value, sub };
+    };
+    const dist = cell("TO GO", true), eta = cell("ETA"), rest = cell("REST IN"), due = cell("DELIVERY");
+    const nav = () => (model.online ? model.indicators.nav : null);
+    const status = () => {
+      const n = nav();
+      if (!n) return { text: "—", color: MUTED };
+      if (n.destination) return { text: `→ ${n.destination.toUpperCase()}`, color: "#E4DCC4" };
+      return { text: n.distance_m > 0 ? "FREE ROUTE" : "NO ROUTE", color: MUTED };
+    };
+    updaters.push(() => {
+      const n = nav();
+      const hasRoute = n && n.distance_m > 0;
+      dist.value.textContent = hasRoute ? String(Math.round(n.distance_m * MI_PER_M)) : "---";
+      dist.sub.textContent = n && n.planned_km ? `MI · OF ${Math.round(n.planned_km * 0.621371)}` : "MI";
+      eta.value.textContent = hasRoute ? duration(n.time_s / 60) : "—";
+      eta.sub.textContent = hasRoute ? clockText(n.clock_min + Math.round(n.time_s / 60)) : "";
+      const tired = n && n.rest_min <= 60;
+      rest.value.textContent = n ? duration(n.rest_min) : "—";
+      rest.value.style.color = tired ? AMB : "#E6E8EA";
+      rest.sub.textContent = n ? (tired ? "FIND A PLACE" : "UNTIL SLEEP") : "";
+      const late = n && n.deadline_min !== null && n.deadline_min < 0;
+      const tight = n && n.deadline_min !== null && hasRoute && n.deadline_min < n.time_s / 60;
+      due.value.textContent = n && n.deadline_min !== null ? (late ? `-${duration(-n.deadline_min)}` : duration(n.deadline_min)) : "—";
+      due.value.style.color = late ? RED : tight ? AMB : "#E6E8EA";
+      due.sub.textContent = !n || n.deadline_min === null ? "NO JOB" : late ? "LATE" : tight ? "WON'T MAKE IT" : "LEFT";
+      applyLens(lamp.lens, AMB, tired ? (model.phase ? "on" : "dim") : "off");
+    });
+    return stripZone("NAV", status, h("div", { class: "nav-body" }, dist.node, eta.node, rest.node, due.node), lamp);
+  }
+
   function bottomRow() {
-    const wipersLamp = smallLamp(20);
-    updaters.push(() => applyLens(wipersLamp.lens, GRN, level("wipers")));
-    return h("div", { class: "bottom-row" },
-      stripZone("WIPERS", switchStatus("wipers", "SPEED"),
-        switchControl({ id: "wipers", labels: ["OFF", "1", "2", "3"], subs: ["", "INT", "LOW", "HIGH"], size: 28, current: () => switchPosition("wipers") }),
-        wipersLamp),
-      fuelZone());
+    return h("div", { class: "bottom-row" }, navZone(), fuelZone());
   }
 
   function buildDash() {

@@ -319,6 +319,8 @@ Oct 4, 2026 · @Liub · v3 (vJoy, віддалена діагностика)
 - **Ретардер прибрано** з панелі, конфігу й сервера. Кнопки vJoy 18 і 19 вільні.
 - **Поворотники** — компактні кнопки (210×58) зліва й справа від таблички статусу. HIGH BEAM і HAZARD у зоні LIGHTS & SIGNALS стали вдвічі вищими.
 - **FUEL** на місці ретардера: запас ходу (`fuelRange`), рівень (`fuel` / `fuelCapacity`), середня витрата (`fuelAvgConsumption`), лампа `fuelWarning`. SDK віддає літри й кілометри; панель показує милі, галони й mpg, як в ATS.
+- **WIPERS** переїхали в зону LIGHTS & SIGNALS під перемикач світла; HIGH BEAM і HAZARD знову звичайного розміру.
+- **NAV** на місці WIPERS у нижньому ряду (NAV і FUEL ділять ряд навпіл): `routeDistance`, `routeTime`, `restStop`, `time_abs_delivery − time_abs`, `cityDst`, `plannedDistanceKm`. Проміжних чекпойнтів у телеметрії немає.
 
 ### Критерії готовності етапу 3
 

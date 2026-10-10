@@ -66,8 +66,9 @@ INDICATORS = (
     "aux_roof",
     "air_pressure",
     "fuel",
+    "nav",
 )
-GAUGE_INDICATORS = ("air_pressure", "fuel")
+GAUGE_INDICATORS = ("air_pressure", "fuel", "nav")
 # Switches whose position the game reports exactly (instead of on/off only).
 POSITION_SOURCES = ("lights",)
 
@@ -510,6 +511,8 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "state": "warning" if data.get("fuelWarning") else "ok",
     }
 
+    nav = compute_nav(data)
+
     trailers = data.get("trailer") or [{}]
     hazard_phase = data.get("blinkerLeftOn") or data.get("blinkerRightOn")
     return {
@@ -531,6 +534,27 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "aux_roof": three_state(data.get("lightsAuxRoof")),
         "air_pressure": air_pressure,
         "fuel": fuel,
+        "nav": nav,
+    }
+
+
+def compute_nav(data: dict[str, Any]) -> dict[str, Any]:
+    """Route and job timing. Times are in-game: route in seconds, the rest in minutes."""
+    clock = int(data.get("time_abs") or 0)
+    on_job = bool(data.get("onJob"))
+    rest_min = int(data.get("restStop") or 0)
+    deadline = int(data.get("time_abs_delivery") or 0)
+    return {
+        "level": "on" if rest_min <= 60 else "off",
+        "distance_m": round(float(data.get("routeDistance") or 0.0)),
+        "time_s": round(float(data.get("routeTime") or 0.0)),
+        "rest_min": rest_min,
+        "clock_min": clock,
+        "on_job": on_job,
+        "deadline_min": deadline - clock if on_job and deadline else None,
+        "planned_km": int(data.get("plannedDistanceKm") or 0) if on_job else 0,
+        "destination": str(data.get("cityDst") or "") if on_job else "",
+        "speed_limit_ms": round(float(data.get("speedLimit") or 0.0), 2),
     }
 
 

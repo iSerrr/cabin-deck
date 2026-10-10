@@ -25,6 +25,7 @@
     {"id": "cab_deck_btn_022", "label": "AUX ROOF", "type": "tap", "indicator": "aux_roof", "action": "Roof auxiliary lights"},
     {"id": "cab_deck_btn_023", "label": "ACTIVATE", "type": "tap", "action": "Activate"},
     {"id": "air", "label": "AIR PRESSURE", "type": "gauge", "indicator": "air_pressure", "min": 0, "max": 150},
-    {"id": "fuel", "label": "FUEL", "type": "gauge", "indicator": "fuel", "min": 0, "max": 1}
+    {"id": "fuel", "label": "FUEL", "type": "gauge", "indicator": "fuel", "min": 0, "max": 1},
+    {"id": "nav", "label": "NAV", "type": "gauge", "indicator": "nav", "min": 0, "max": 1}
   ]
 }
