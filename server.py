@@ -60,6 +60,12 @@ PACE_MAX_STEP_KM = 5.0        # a bigger odometer jump means a teleport: start o
 PACE_MOVING_KM = 0.01         # odometer change that counts as moving within one game minute
 PACE_MAX_SAMPLES = 5000
 
+# Delivery plan: the route is split into shifts (wake up to sleep) that fit before the deadline.
+SHIFT_DEFAULT_MIN = 11 * 60   # driving window between sleeps until the game shows a real one
+SLEEP_DEFAULT_MIN = 9 * 60    # until a real sleep is measured from the clock jump
+SLEEP_RESET_MIN = 120         # restStop jumping up by this much means the driver slept
+PLAN_MAX_DAYS = 14
+
 MS_TO_MPH = 2.236936
 KM_TO_MI = 0.621371
 
@@ -141,6 +147,24 @@ class DrivePace:
 
 
 @dataclass
+class JobPlan:
+    """Shift-by-shift plan of the current job. Lives in memory, like DrivePace."""
+
+    job_key: tuple[str, int] | None = None
+    job_start_km: float = 0.0
+    planned_km: float = 0.0
+    day: int = 0
+    shift_start_km: float = 0.0
+    shift_start_rest: int = 1
+    shift_target_km: float = 0.0
+    last_rest: int = 0
+    last_clock: int = 0
+    shift_min: int = SHIFT_DEFAULT_MIN
+    sleep_min: int = SLEEP_DEFAULT_MIN
+    view: dict[str, Any] | None = None
+
+
+@dataclass
 class DeckState:
     config: dict[str, Any]
     set_button: SetButton
@@ -160,6 +184,7 @@ class DeckState:
     indicators: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_state_message: dict[str, Any] | None = None
     pace: DrivePace = field(default_factory=DrivePace)
+    plan: JobPlan = field(default_factory=JobPlan)
 
     @property
     def controls_by_id(self) -> dict[str, dict[str, Any]]:
@@ -672,6 +697,83 @@ def pace_estimate(pace: DrivePace) -> dict[str, Any]:
     return {"avg_kmh": round(distance / minutes * 60, 1), "window_km": round(distance, 1)}
 
 
+def plan_shifts(rest_min: int, minutes_left: int, shift_min: int, sleep_min: int) -> list[int]:
+    """Driving minutes of each shift that starts before the deadline, the current one first."""
+    shifts = [max(0, min(rest_min, minutes_left))]
+    start = rest_min + sleep_min
+    while start < minutes_left and len(shifts) < PLAN_MAX_DAYS:
+        shifts.append(min(shift_min, minutes_left - start))
+        start += shift_min + sleep_min
+    return shifts
+
+
+def remaining_km(plan: JobPlan, data: dict[str, Any]) -> float:
+    """GPS distance left, or the planned job distance minus what was driven when no route is set."""
+    route_km = float(data.get("routeDistance") or 0.0) / 1000
+    if route_km > 0:
+        return route_km
+    return max(0.0, plan.planned_km - (float(data.get("truckOdometer") or 0.0) - plan.job_start_km))
+
+
+def start_shift(plan: JobPlan, odometer: float, rest_min: int, remaining: float, minutes_left: int) -> None:
+    """Fix today's target: today's share of the remaining distance by available driving time."""
+    plan.day += 1
+    plan.shift_start_km = odometer
+    plan.shift_start_rest = max(rest_min, 1)
+    shifts = plan_shifts(rest_min, minutes_left, plan.shift_min, plan.sleep_min)
+    total = sum(shifts)
+    plan.shift_target_km = remaining * shifts[0] / total if total > 0 else remaining
+
+
+def update_plan(plan: JobPlan, data: dict[str, Any]) -> dict[str, Any] | None:
+    """Today's target, progress against it and the split of the remaining days. Call on every poll."""
+    if not data.get("onJob"):
+        plan.job_key, plan.view = None, None
+        return None
+    clock = int(data.get("time_abs") or 0)
+    deadline = int(data.get("time_abs_delivery") or 0)
+    if data.get("paused") or clock <= 0 or deadline <= 0:
+        return plan.view
+    rest = int(data.get("restStop") or 0)
+    odometer = float(data.get("truckOdometer") or 0.0)
+    minutes_left = deadline - clock
+    key = (str(data.get("cityDst") or ""), deadline)
+
+    if key != plan.job_key:
+        log.info("Delivery plan: new job to %s, %d min to deadline.", key[0] or "?", minutes_left)
+        plan.job_key, plan.day = key, 0
+        plan.job_start_km = odometer
+        plan.planned_km = float(data.get("plannedDistanceKm") or 0.0)
+        start_shift(plan, odometer, rest, remaining_km(plan, data), minutes_left)
+    elif rest - plan.last_rest >= SLEEP_RESET_MIN:
+        plan.shift_min = rest
+        if clock - plan.last_clock >= SLEEP_RESET_MIN:
+            plan.sleep_min = clock - plan.last_clock
+        log.info("Delivery plan: slept %d min, new shift of %d min.", plan.sleep_min, plan.shift_min)
+        start_shift(plan, odometer, rest, remaining_km(plan, data), minutes_left)
+    plan.last_rest, plan.last_clock = rest, clock
+
+    remaining = remaining_km(plan, data)
+    shifts = plan_shifts(rest, minutes_left, plan.shift_min, plan.sleep_min)
+    total = sum(shifts)
+    done = odometer - plan.shift_start_km
+    today_left = max(0.0, plan.shift_target_km - done)
+    elapsed = min(1.0, max(0.0, (plan.shift_start_rest - rest) / plan.shift_start_rest))
+    future_total = sum(shifts[1:])
+    later = max(0.0, remaining - today_left)
+    plan.view = {
+        "day": plan.day,
+        "days": plan.day + len(shifts) - 1,
+        "done_km": round(done, 1),
+        "target_km": round(plan.shift_target_km, 1),
+        "ahead_km": round(done - plan.shift_target_km * elapsed, 1),
+        "next_km": [round(later * s / future_total, 1) for s in shifts[1:]] if future_total > 0 else [],
+        "required_kmh": round(remaining / total * 60, 1) if total > 0 else None,
+        "late": minutes_left <= 0 or total <= 0,
+    }
+    return plan.view
+
+
 def update_from_telemetry(state: DeckState, data: dict[str, Any] | None) -> None:
     if data is None:
         state.game = {"telemetry": False}
@@ -685,6 +787,7 @@ def update_from_telemetry(state: DeckState, data: dict[str, Any] | None) -> None
     if active:
         record_pace(state.pace, data)
         add_rest_range(state.indicators["nav"], pace_estimate(state.pace))
+        state.indicators["nav"]["plan"] = update_plan(state.plan, data)
     correct_switches(state)
 
 

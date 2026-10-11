@@ -208,7 +208,7 @@
   .fuel-scale { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; font-weight: 700; letter-spacing: .1em; color: rgba(228,220,196,.55); }
   .fuel-stat { font-size: 15px; font-weight: 600; letter-spacing: .04em; color: var(--legend); font-variant-numeric: tabular-nums; }
   .fuel-stat + .fuel-cap { margin-top: 10px; }
-  .nav-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.25fr 1fr 1fr 1fr; gap: 8px; align-items: stretch; padding: 2px 2px 0; }
+  .nav-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.1fr 1fr 1fr 1fr 1.25fr; gap: 6px; align-items: stretch; padding: 2px 2px 0; }
   .nav-cell { border-radius: 8px; background: rgba(0,0,0,.28); box-shadow: inset 0 2px 6px rgba(0,0,0,.6); padding: 10px 10px 8px; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
   .nav-val { font-size: 26px; font-weight: 700; letter-spacing: .01em; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; color: #E6E8EA; }
   .nav-val.big { font-size: 34px; }
@@ -1169,6 +1169,10 @@
       return { node: h("div", { class: "nav-cell" }, h("div", { class: "fuel-cap", style: "margin:0" }, caption), value, sub), value, sub };
     };
     const dist = cell("TO GO", true), eta = cell("ETA"), rest = cell("REST IN"), due = cell("DELIVERY");
+    // PLAN: today's shift target and the split of the next shifts, all fitted to the deadline.
+    const planCap = h("div", { class: "fuel-cap", style: "margin:0" }, "PLAN");
+    const planVal = h("div", { class: "nav-val" }), planSub = h("div", { class: "nav-sub" }), planNext = h("div", { class: "nav-sub" });
+    const plan = { node: h("div", { class: "nav-cell" }, planCap, planVal, planSub, planNext) };
     const nav = () => (model.online ? model.indicators.nav : null);
     const status = () => {
       const n = nav();
@@ -1196,9 +1200,19 @@
       setText(due.value, n && n.deadline_min !== null ? (late ? `-${duration(-n.deadline_min)}` : duration(n.deadline_min)) : "—");
       setStyle(due.value, "color", late ? RED : tight ? AMB : "#E6E8EA");
       setText(due.sub, !n || n.deadline_min === null ? "NO JOB" : `DUE ${clockText(n.clock_min + n.deadline_min)}`);
+      const p = n && n.plan;
+      const mi = (km) => Math.round(km * 0.621371);
+      setText(planCap, p ? `PLAN · DAY ${p.day}/${p.days}` : "PLAN");
+      setText(planVal, p ? `${mi(p.done_km)}/${mi(p.target_km)}` : "—");
+      // Behind by more than a tenth of today's target is amber; past the deadline is red.
+      const behind = p && p.ahead_km < -0.1 * p.target_km;
+      setStyle(planVal, "color", !p ? "#E6E8EA" : p.late ? RED : behind ? AMB : GRN);
+      setText(planSub, !p ? "NO JOB" : p.late ? "PAST DEADLINE"
+        : p.ahead_km >= 0 ? `MI · +${mi(p.ahead_km)} AHEAD` : `MI · ${mi(-p.ahead_km)} BEHIND`);
+      setText(planNext, p && p.next_km.length ? `NEXT ${p.next_km.map(mi).join(" · ")}` : p ? "LAST DAY" : "");
       applyLens(lamp.lens, AMB, tired ? (model.phase ? "on" : "dim") : "off");
     });
-    return stripZone("NAV", status, h("div", { class: "nav-body" }, dist.node, eta.node, rest.node, due.node), lamp);
+    return stripZone("NAV", status, h("div", { class: "nav-body" }, dist.node, eta.node, rest.node, due.node, plan.node), lamp);
   }
 
   function bottomRow() {
