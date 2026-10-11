@@ -1,6 +1,6 @@
 """Cab Deck server: serves the tablet panel, presses vJoy buttons and
-reports truck state from game telemetry. A second port serves the read-only
-Alpha Gen instrument cluster (dash/index.html).
+reports truck state from game telemetry. Two more ports serve the read-only
+Alpha Gen instrument cluster: v1 dials (dash/index.html) and v2 bars (dash/v2.html).
 
 Run on Windows:  python server.py
 Run on macOS:    python server.py --dry-run
@@ -35,7 +35,9 @@ INDEX_PATH = STATIC_DIR / "index.html"
 LOG_PATH = BASE_DIR / "logs" / "cab_deck.log"
 DEFAULT_PORT = 8000
 DASH_INDEX_PATH = BASE_DIR / "dash" / "index.html"
+DASH_V2_PATH = BASE_DIR / "dash" / "v2.html"
 DEFAULT_DASH_PORT = 8701
+DEFAULT_DASH_V2_PORT = 8702
 
 BUTTON_ID_PATTERN = re.compile(r"^cab_deck_btn_(\d{3})$")
 NAMED_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
@@ -1029,7 +1031,7 @@ def handle_message(state: DeckState, text: str, held: set[int]) -> dict[str, Any
 # --- Web app -----------------------------------------------------------------
 
 
-def create_app(state: DeckState, dash_port: int) -> FastAPI:
+def create_app(state: DeckState, dash_pages: dict[int, Path]) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         telemetry_task = asyncio.create_task(telemetry_loop(state))
@@ -1046,14 +1048,18 @@ def create_app(state: DeckState, dash_port: int) -> FastAPI:
 
     @app.get("/")
     async def index(request: Request) -> FileResponse:
-        # The same app listens on both ports; the dash port serves the instrument cluster.
+        # The same app listens on every port; a dash port serves its instrument cluster.
         server = request.scope.get("server")
-        page = DASH_INDEX_PATH if server and server[1] == dash_port else INDEX_PATH
+        page = dash_pages.get(server[1], INDEX_PATH) if server else INDEX_PATH
         return FileResponse(page, headers={"Cache-Control": "no-store"})
 
     @app.get("/dash")
     async def dash_index() -> FileResponse:
         return FileResponse(DASH_INDEX_PATH, headers={"Cache-Control": "no-store"})
+
+    @app.get("/dash2")
+    async def dash_v2() -> FileResponse:
+        return FileResponse(DASH_V2_PATH, headers={"Cache-Control": "no-store"})
 
     @app.websocket("/ws/dash")
     async def dash_websocket(websocket: WebSocket) -> None:
@@ -1183,7 +1189,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Cab Deck tablet panel server.")
     parser.add_argument("--dry-run", action="store_true", help="log button presses instead of using vJoy")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--dash-port", type=int, default=DEFAULT_DASH_PORT, help="port of the Alpha Gen instrument cluster")
+    parser.add_argument("--dash-port", type=int, default=DEFAULT_DASH_PORT, help="port of the Alpha Gen dials (v1)")
+    parser.add_argument("--dash2-port", type=int, default=DEFAULT_DASH_V2_PORT, help="port of the Alpha Gen bars (v2)")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     return parser.parse_args()
 
@@ -1223,7 +1230,7 @@ def main() -> None:
     log.info("Loaded %d controls. vJoy buttons available: %s", len(state.controls_by_id), vjoy_buttons or "unknown")
     addresses = local_ipv4_addresses() or ["<this-pc-ip>"]
     try:
-        sockets = [bind_socket(args.port), bind_socket(args.dash_port)]
+        sockets = [bind_socket(port) for port in (args.port, args.dash_port, args.dash2_port)]
     except OSError as error:
         log.error("Startup failed: %s", error)
         sys.exit(1)
@@ -1231,12 +1238,13 @@ def main() -> None:
     print("\nOpen the panel on the tablet:")
     for address in addresses:
         print(f"  http://{address}:{args.port}")
-    print("Open the Alpha Gen dash on the phone:")
+    print("Open the Alpha Gen dash on the phone (v1 dials, v2 bars):")
     for address in addresses:
-        print(f"  http://{address}:{args.dash_port}")
+        print(f"  http://{address}:{args.dash_port}   http://{address}:{args.dash2_port}")
     print("Press Ctrl+C to stop.\n", flush=True)
 
-    config = uvicorn.Config(create_app(state, args.dash_port), log_config=None, access_log=False)
+    dash_pages = {args.dash_port: DASH_INDEX_PATH, args.dash2_port: DASH_V2_PATH}
+    config = uvicorn.Config(create_app(state, dash_pages), log_config=None, access_log=False)
     uvicorn.Server(config).run(sockets=sockets)
 
 

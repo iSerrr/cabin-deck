@@ -19,6 +19,7 @@
    ```
    New-NetFirewallRule -DisplayName "Cab Deck 8000" -Direction Inbound -Protocol TCP -LocalPort 8000 -Profile Private -Action Allow
    New-NetFirewallRule -DisplayName "Cab Deck Dash 8701" -Direction Inbound -Protocol TCP -LocalPort 8701 -Profile Private -Action Allow
+   New-NetFirewallRule -DisplayName "Cab Deck Dash 8702" -Direction Inbound -Protocol TCP -LocalPort 8702 -Profile Private -Action Allow
    ```
    Домашня Wi-Fi мережа в Windows має бути «Приватною» (Параметри → Мережа та Інтернет → Wi-Fi → властивості мережі).
 6. **Планшет**: вимкни автоблокування екрана. На iPad відкрий панель у Safari → «Поділитися» → «На початковий екран», щоб вона запускалась на весь екран.
@@ -47,8 +48,9 @@ Open the Alpha Gen dash on the phone:
 - Два головні кола на всю висоту: спідометр (mph) з міткою круїзу й написом SET, тахометр з передачею. Малі прилади в кутах: повітря (psi), паливо, тиск оливи (psi), температура води (°F).
 - Між колами: зверху поворотники, знизу лампи PARK, JAKE, CRUISE, DIFF, HIGH — лише ті, що зараз горять.
 - Без гри (або на Mac з `--dry-run`) щиток крутить демо-поїздку і пише вгорі **DEMO**. Щойно з'являється телеметрія, показує реальні дані.
-- Торкнись екрана, щоб увімкнути повний екран. Інший порт: `--dash-port 8702`.
-- Код: `dash/index.html` (WebGL-шейдер малює прилади, HTML лише текст).
+- **Варіант 2** — `http://192.168.x.x:8702`: замість кіл дві смуги виходять із центрального екрана й піднімаються назовні S-подібною кривою (ліворуч швидкість, праворуч оберти). У центрі велика швидкість, передача, поворотники, круїз (CRUISE · SET 65) і оберти цифрами; знизу по кутах тонкі шкали AIR, FUEL, OIL, WATER. Дані ті самі.
+- Торкнись екрана, щоб увімкнути повний екран. Інші порти: `--dash-port`, `--dash2-port`.
+- Код: `dash/index.html` (v1, кільця) і `dash/v2.html` (v2, смуги); WebGL-шейдер малює прилади, HTML лише текст.
 
 ## Повний екран на планшеті
 

@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#050806">
+<title>Alpha Gen Dash v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@300;500;700&display=swap" rel="stylesheet">
+<style>
+  /* Alpha Gen v2: speed and rpm as two S-curved bars that rise from a centre screen outwards.
+     WebGL draws bars, glow and trim; HTML overlays only draw text.
+     Live data comes from server.py over /ws/dash; without the game it runs a demo drive. */
+  :root { --cream: #E4DCC4; --mint: #7BEFB5; --amber: #FFB547; --red: #FF4A3A; --blue: #6FB6FF; --dim: rgba(228,220,196,.28); }
+  html, body { margin: 0; height: 100%; background: #050806; overflow: hidden; }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Saira Semi Condensed", "Arial Narrow", sans-serif; color: var(--cream);
+    -webkit-user-select: none; user-select: none; touch-action: none; -webkit-tap-highlight-color: transparent;
+  }
+  #stage { position: relative; --u: 1px; }
+  #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .ov { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; line-height: 1; pointer-events: none; font-variant-numeric: tabular-nums; }
+  .ov.lft { transform: translate(0, -50%); }
+  .ov.rgt { transform: translate(-100%, -50%); }
+
+  .num { font-size: calc(var(--u) * 3.8); font-weight: 500; color: var(--dim); transition: color .15s, text-shadow .15s; }
+  .num.on { color: var(--cream); text-shadow: 0 0 calc(var(--u) * .8) rgba(123,239,181,.55); }
+  .num.hot { color: rgba(255,74,58,.45); }
+  .num.hot.on { color: var(--red); text-shadow: 0 0 calc(var(--u) * .8) rgba(255,74,58,.7); }
+  .tag { font-size: calc(var(--u) * 2.2); font-weight: 700; letter-spacing: .3em; color: var(--dim); }
+
+  .speed { font-size: calc(var(--u) * 27); font-weight: 500; transform: translate(-50%, -50%) skewX(-6deg); text-shadow: 0 0 calc(var(--u) * 2.5) rgba(123,239,181,.35); }
+  .unit { font-size: calc(var(--u) * 2.6); font-weight: 700; letter-spacing: .4em; color: var(--dim); }
+  .gear { font-size: calc(var(--u) * 9); font-weight: 500; color: var(--cream); }
+  .rpm { font-size: calc(var(--u) * 2.6); font-weight: 700; letter-spacing: .22em; color: var(--mint); opacity: .85; }
+  .cruise {
+    padding: calc(var(--u) * .7) calc(var(--u) * 1.6); border: 1px solid var(--mint); border-radius: calc(var(--u) * .8);
+    font-size: calc(var(--u) * 2.4); font-weight: 700; letter-spacing: .2em; color: var(--mint);
+    box-shadow: 0 0 calc(var(--u) * 1.6) -0.2em var(--mint), inset 0 0 calc(var(--u) * 1) -0.3em var(--mint);
+    text-shadow: 0 0 calc(var(--u) * .8) var(--mint); display: none;
+  }
+  .cruise.on { display: block; }
+  .cruise b { color: var(--cream); font-weight: 700; }
+  .demo { font-size: max(8px, calc(var(--u) * 1.4)); font-weight: 700; letter-spacing: .3em; color: var(--dim); }
+
+  .cap { font-size: max(9px, calc(var(--u) * 1.8)); font-weight: 700; letter-spacing: .26em; color: var(--dim); }
+  .val { font-size: max(10px, calc(var(--u) * 2.6)); font-weight: 500; color: var(--cream); }
+  .val.hot { color: var(--red); }
+
+  .blink { width: calc(var(--u) * 5); height: calc(var(--u) * 5); opacity: .14; transition: opacity .06s; }
+  .blink path { fill: var(--mint); }
+  .blink.on { opacity: 1; filter: drop-shadow(0 0 calc(var(--u) * 1) rgba(123,239,181,.9)); }
+
+  /* lamps sit under the centre screen and show only while lit */
+  .tt-row { display: flex; gap: calc(var(--u) * .8); }
+  .tt {
+    display: none; padding: calc(var(--u) * .5) calc(var(--u) * 1); border: 1px solid; border-radius: calc(var(--u) * .6);
+    font-size: max(9px, calc(var(--u) * 1.6)); font-weight: 700; letter-spacing: .2em;
+  }
+  .tt.on { display: block; color: var(--c); border-color: var(--c); box-shadow: 0 0 calc(var(--u) * 1.4) -0.2em var(--c), inset 0 0 calc(var(--u) * 1) -0.3em var(--c); text-shadow: 0 0 calc(var(--u) * .8) var(--c); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl"></canvas>
+</div>
+
+<script id="frag" type="x-shader/x-fragment">
+precision highp float;
+
+uniform vec2 uRes;
+uniform float uTime;
+uniform float uBoot;
+uniform float uLen;   // arc length of one bar curve
+uniform vec4 uBar;    // speed 0..1, rpm 0..1, cruise mark on the speed bar (-1 = none), unused
+uniform vec4 uMini;   // air, fuel, oil, water as 0..1
+
+const float PI = 3.14159265;
+const vec3 G0 = vec3(.027, .047, .035);   // #070C09
+const vec3 G1 = vec3(.039, .106, .078);   // #0A1B14
+const vec3 G2 = vec3(.055, .141, .106);   // #0E241B
+const vec3 G3 = vec3(.082, .192, .149);   // #153126 brand green
+const vec3 MINT = vec3(.48, .94, .71);
+const vec3 CREAM = vec3(.894, .863, .769); // #E4DCC4 legend cream
+const vec3 RED = vec3(1., .29, .23);
+
+// Bar curve for the right side; the left one is its mirror. It leaves the centre screen flat,
+// rises as a smootherstep and arrives flat at the outer top.
+const float X0 = .30, X1 = 1.0, YB = -.30, YT = .34;
+const float MINI_X0 = .62, MINI_X1 = 1.0;
+
+float PX;
+
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+
+float S(float u) { return u * u * u * (u * (u * 6. - 15.) + 10.); }
+float dS(float u) { return 30. * u * u * (u - 1.) * (u - 1.); }
+float curveY(float u) { return YB + (YT - YB) * S(u); }
+float slope(float u) { return (YT - YB) * dS(u) / (X1 - X0); }
+
+// Same 16-step midpoint rule as arcLen() in JS, so labels sit exactly on the ticks.
+float arcLen(float u) {
+  float du = u / 16., L = 0.;
+  for (int i = 0; i < 16; i++) {
+    float k = slope((float(i) + .5) * du);
+    L += sqrt(1. + k * k);
+  }
+  return L * du * (X1 - X0);
+}
+
+bool isHot(float t, vec2 warn) { return t < warn.x || t > warn.y; }
+
+vec3 zoneCol(float t, vec2 warn) {
+  return isHot(t, warn) ? RED : mix(MINT, CREAM, smoothstep(.15, 1., t) * .55);
+}
+
+float sdBox(vec2 p, vec2 b, float r) {
+  vec2 q = abs(p) - b + r;
+  return length(max(q, 0.)) + min(max(q.x, q.y), 0.) - r;
+}
+
+vec3 bar(vec3 col, vec2 p, float side, float v, vec2 warn, float nMaj, float nMin, float nSeg, float mark) {
+  float u = (p.x * side - X0) / (X1 - X0);
+  if (u < -.08 || u > 1.08) return col;
+  float uc = clamp(u, 0., 1.);
+  float k = slope(uc);
+  float sd = (p.y - curveY(uc)) / sqrt(1. + k * k);   // signed distance to the curve, + is above
+  if (abs(sd) > .16) return col;
+  float L = arcLen(uc);
+  float t = L / uLen;
+  float inU = step(0., u) * step(u, 1.);
+  float hw = mix(.014, .03, t);                          // the bar widens as it climbs
+  float hot = isHot(t, warn) ? 1. : 0.;
+  float on = step(.001, v);
+
+  // recessed channel the bar sits in
+  col = mix(col, G0 * .7, (1. - smoothstep(hw + .004, hw + .02, abs(sd))) * inU * .7);
+
+  // satin rail under the bar: the classic trim
+  float rd = abs(sd + hw + .013);
+  col = mix(col, vec3(.62, .66, .63) * (.55 + .35 * t), (1. - smoothstep(.0014 - PX, .0014 + PX, rd)) * inU);
+
+  // segmented bar that lights up to the value
+  float band = (1. - smoothstep(hw - PX, hw + PX, abs(sd))) * inU;
+  float g = fract(t * nSeg);
+  float seg = smoothstep(0., .1, g) * (1. - smoothstep(.8, .9, g));
+  float lit = 1. - smoothstep(v - .002, v + .002, t);
+  vec3 off = mix(G3 * 1.7, RED * .28, hot);
+  vec3 litCol = hot > .5 && !isHot(v, warn) ? RED * .45 : zoneCol(t, warn) * 1.15;
+  litCol *= mix(.7, 1.15, smoothstep(v - .3, v, t));      // brighter towards the head
+  col = mix(col, mix(off, litCol, lit), band * seg);
+
+  // glow of the lit part
+  float along = max(t - v, 0.) * uLen + max(-u, 0.) * (X1 - X0);
+  float dg = length(vec2(max(abs(sd) - hw, 0.), along));
+  col += zoneCol(min(t, v), warn) * exp(-dg / .022) * .22 * uBoot * on;
+
+  // head: a bright bar across the track at the value
+  float dh = abs(t - v) * uLen;
+  float head = (1. - smoothstep(.003 - PX, .003 + PX, dh)) * (1. - smoothstep(hw * 1.9 - PX, hw * 1.9 + PX, abs(sd))) * inU;
+  col += zoneCol(v, warn) * exp(-length(vec2(dh, max(abs(sd) - hw, 0.))) / .014) * .45 * uBoot * on;
+  col = mix(col, CREAM * 1.05, head * on);
+
+  // ticks above the bar
+  float dMaj = abs(fract(t * nMaj + .5) - .5) / nMaj * uLen;
+  float dMin = abs(fract(t * nMin + .5) - .5) / nMin * uLen;
+  float majR = smoothstep(hw + .012 - PX, hw + .012 + PX, sd) * (1. - smoothstep(hw + .034 - PX, hw + .034 + PX, sd));
+  float minR = smoothstep(hw + .012 - PX, hw + .012 + PX, sd) * (1. - smoothstep(hw + .022 - PX, hw + .022 + PX, sd));
+  float tick = max((1. - smoothstep(.0028 - PX, .0028 + PX, dMaj)) * majR,
+                   (1. - smoothstep(.0013 - PX, .0013 + PX, dMin)) * minR * .7) * inU;
+  col = mix(col, mix(CREAM, RED, hot) * mix(.45, 1., lit), tick);
+
+  // set-point marker (cruise): a mint wedge pointing down at the bar
+  if (mark >= 0.) {
+    float dm = abs(t - mark) * uLen;
+    float wm = mix(.002, .011, smoothstep(hw + .004, hw + .03, sd));
+    float mR = smoothstep(hw + .004 - PX, hw + .004 + PX, sd) * (1. - smoothstep(hw + .03 - PX, hw + .03 + PX, sd));
+    col = mix(col, MINT * 1.1, (1. - smoothstep(wm - PX, wm + PX, dm)) * mR);
+    col += MINT * exp(-length(vec2(dm, abs(sd - hw - .017))) / .012) * .3 * uBoot;
+  }
+  return col;
+}
+
+vec3 mini(vec3 col, vec2 p, float side, float y, float v, vec2 warn) {
+  float w = MINI_X1 - MINI_X0;
+  float u = (p.x * side - MINI_X0) / w;
+  float dy = abs(p.y - y);
+  if (u < -.15 || u > 1.15 || dy > .05) return col;
+  float inU = step(0., u) * step(u, 1.);
+  float band = (1. - smoothstep(.007 - PX, .007 + PX, dy)) * inU;
+  float g = fract(u * 24.);
+  float seg = smoothstep(0., .1, g) * (1. - smoothstep(.72, .82, g));
+  float hot = isHot(u, warn) ? 1. : 0.;
+  float lit = 1. - smoothstep(v - .003, v + .003, u);
+  vec3 off = mix(G3 * 1.6, RED * .25, hot);
+  vec3 litCol = isHot(v, warn) ? RED : hot > .5 ? RED * .4 : MINT * .95;
+  col = mix(col, mix(off, litCol, lit), band * seg);
+  float along = max(u - v, 0.) * w + max(-u, 0.) * w;
+  col += (isHot(v, warn) ? RED : MINT) * exp(-length(vec2(max(dy - .007, 0.), along)) / .012) * .12 * uBoot * step(.001, v);
+  // satin rail under the mini bar
+  col = mix(col, vec3(.62, .66, .63) * .6, (1. - smoothstep(.0012 - PX, .0012 + PX, abs(p.y - y + .016))) * inU);
+  return col;
+}
+
+void main() {
+  PX = 1. / uRes.y;
+  vec2 p = (gl_FragCoord.xy - .5 * uRes) / uRes.y;
+
+  // console: deep green, fine brushed lines, soft light behind the centre
+  vec3 col = mix(G1, G0, smoothstep(0., .9, length(p - vec2(0., .35))));
+  col *= .94 + .06 * sin(p.y * 900.);
+  col += G3 * .5 * exp(-length(p * vec2(.6, 1.)) * 2.5);
+
+  // centre screen: a rounded square the bars come out of
+  float db = sdBox(p - vec2(0., .03), vec2(.255, .40), .075);
+  col *= 1. - .45 * (1. - smoothstep(0., .06, db)) * step(0., db);
+  col = mix(col, mix(G2 * .95, G0 * .55, smoothstep(-.4, .1, db) * .9 + .1 * (p.y + .5)), (1. - smoothstep(-PX, PX, db)) * .92);
+  col += MINT * exp(-abs(db) / .0022) * .35 * uBoot;
+
+  col = bar(col, p, -1., uBar.x, vec2(-1., 2.), 9., 45., 45., uBar.z);
+  col = bar(col, p, 1., uBar.y, vec2(-1., .84), 5., 25., 50., -1.);
+  col = mini(col, p, -1., -.30, uMini.x, vec2(.4, 2.));
+  col = mini(col, p, -1., -.42, uMini.y, vec2(.125, 2.));
+  col = mini(col, p, 1., -.30, uMini.z, vec2(.15, 2.));
+  col = mini(col, p, 1., -.42, uMini.w, vec2(-1., .8));
+
+  col *= 1. - .2 * smoothstep(.5, 1.25, length(p * vec2(.85, 1.4)));
+  col += (hash(gl_FragCoord.xy + fract(uTime) * 100.) - .5) * 2. / 255.;
+  gl_FragColor = vec4(clamp(col, 0., 1.), 1.);
+}
+</script>
+
+<script>
+"use strict";
+
+const ASPECT = 2.17;          // Galaxy S26 in landscape (≈ 19.5:9)
+const MAX_DPR = 2;            // cap render resolution to keep the shader cheap
+
+// Must match the shader constants.
+const X0 = .30, X1 = 1.0, YB = -.30, YT = .34;
+const MINI_X0 = .62, MINI_X1 = 1.0;
+
+const BARS = [
+  { id: "speed", side: -1, maj: 9, warn: [-1, 2], label: i => i * 10, tag: "MPH" },
+  { id: "rpm",   side:  1, maj: 5, warn: [-1, .84], label: i => i * 5, tag: "×100 RPM" },
+];
+
+const MINIS = [
+  { id: "air",   side: -1, y: -.30, cap: "AIR" },
+  { id: "fuel",  side: -1, y: -.42, cap: "FUEL" },
+  { id: "oil",   side:  1, y: -.30, cap: "OIL" },
+  { id: "water", side:  1, y: -.42, cap: "WATER" },
+];
+
+const TELLTALES = [
+  { id: "park",   text: "PARK", c: "var(--red)" },
+  { id: "jake",   text: "JAKE", c: "var(--amber)" },
+  { id: "diff",   text: "DIFF", c: "var(--amber)" },
+  { id: "beam",   text: "HIGH", c: "var(--blue)" },
+];
+
+const stage = document.getElementById("stage");
+const canvas = document.getElementById("gl");
+
+/* ---------- bar geometry (mirrors the shader) ---------- */
+
+const S = u => u * u * u * (u * (u * 6 - 15) + 10);
+const dS = u => 30 * u * u * (u - 1) * (u - 1);
+const curveY = u => YB + (YT - YB) * S(u);
+const slope = u => (YT - YB) * dS(u) / (X1 - X0);
+
+function arcLen(u) {
+  const du = u / 16;
+  let L = 0;
+  for (let i = 0; i < 16; i++) {
+    const k = slope((i + .5) * du);
+    L += Math.sqrt(1 + k * k);
+  }
+  return L * du * (X1 - X0);
+}
+
+const BAR_LEN = arcLen(1);
+const halfWidth = t => .014 + (.03 - .014) * t;
+
+function uAt(t) {
+  // invert the arc length: bisection is plenty for a monotonic curve
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (arcLen(mid) / BAR_LEN < t) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// Point at fraction t along a bar, pushed along the normal: + above the bar, - below.
+function pointOnBar(side, t, offset) {
+  const u = uAt(t);
+  const k = slope(u), n = Math.sqrt(1 + k * k);
+  const x = X0 + u * (X1 - X0), y = curveY(u);
+  return [(x - k / n * offset) * side, y + offset / n];
+}
+
+/* ---------- layout ---------- */
+
+function place(el, x, y) {
+  el.style.left = (x / ASPECT + .5) * 100 + "%";
+  el.style.top = (.5 - y) * 100 + "%";
+}
+
+function addEl(cls, html, x, y) {
+  const el = document.createElement("div");
+  el.className = "ov " + cls;
+  el.innerHTML = html;
+  place(el, x, y);
+  stage.appendChild(el);
+  return el;
+}
+
+function buildOverlay() {
+  const ui = { nums: {} };
+  for (const b of BARS) {
+    ui.nums[b.id] = [];
+    for (let i = 0; i <= b.maj; i++) {
+      const t = i / b.maj;
+      const hot = t < b.warn[0] || t > b.warn[1] + 1e-6;
+      const el = addEl("num" + (hot ? " hot" : ""), b.label(i), ...pointOnBar(b.side, t, halfWidth(t) + .062));
+      ui.nums[b.id].push({ t, el });
+    }
+    addEl("tag", b.tag, ...pointOnBar(b.side, .97, -(halfWidth(1) + .05)));
+  }
+
+  for (const m of MINIS) {
+    // mirrored: caption at the inner end, value at the outer end
+    const inner = MINI_X0 * m.side, outer = MINI_X1 * m.side;
+    const y = m.y + .035;
+    addEl(m.side > 0 ? "cap lft" : "cap rgt", m.cap, inner, y);
+    ui[m.id] = addEl(m.side > 0 ? "val rgt" : "val lft", "", outer, y);
+  }
+
+  // centre screen
+  const arrow = d => `<svg class="blink" viewBox="0 0 24 24"><path d="${d}"/></svg>`;
+  ui.left = addEl("", arrow("M10 4 2 12l8 8v-5h12V9H10z"), -.17, .335).firstChild;
+  ui.right = addEl("", arrow("M14 4l8 8-8 8v-5H2V9h12z"), .17, .335).firstChild;
+  ui.gear = addEl("gear", "N", 0, .335);
+  ui.demo = addEl("demo", "", 0, .405);
+  ui.speed = addEl("speed", "0", 0, .07);
+  addEl("unit", "MPH", 0, -.115);
+  ui.cruise = addEl("cruise", "", 0, -.215);
+  ui.rpm = addEl("rpm", "", 0, -.31);
+
+  // under the centre screen: lamps, shown only while lit
+  const row = addEl("tt-row", "", 0, -.445);
+  ui.tt = {};
+  for (const t of TELLTALES) {
+    const el = document.createElement("div");
+    el.className = "tt";
+    el.textContent = t.text;
+    el.style.setProperty("--c", t.c);
+    row.appendChild(el);
+    ui.tt[t.id] = el;
+  }
+  return ui;
+}
+
+function fitStage() {
+  const w = Math.min(innerWidth, innerHeight * ASPECT);
+  const h = w / ASPECT;
+  stage.style.width = w + "px";
+  stage.style.height = h + "px";
+  stage.style.setProperty("--u", h / 100 + "px");
+  const dpr = Math.min(devicePixelRatio || 1, MAX_DPR);
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+}
+
+/* ---------- WebGL ---------- */
+
+function compile(gl, type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error("Shader compile failed: " + gl.getShaderInfoLog(s));
+  return s;
+}
+
+function initGL() {
+  const gl = canvas.getContext("webgl", { antialias: false, alpha: false, powerPreference: "high-performance" });
+  if (!gl) throw new Error("WebGL is not available in this browser.");
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, "attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}"));
+  gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, document.getElementById("frag").textContent));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error("Shader link failed: " + gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  const u = name => gl.getUniformLocation(prog, name);
+  gl.uniform1f(u("uLen"), BAR_LEN);
+  return { gl, uRes: u("uRes"), uTime: u("uTime"), uBoot: u("uBoot"), uBar: u("uBar"), uMini: u("uMini") };
+}
+
+/* ---------- truck state: live telemetry or a simulated demo drive ---------- */
+
+const RATIOS = [0, 12.8, 9.25, 6.7, 4.9, 3.75, 2.73, 1.97, 1.43, 1.0, .73]; // Eaton 10-speed, approx
+const RPM_PER_MPH = 30.6;   // final drive and tyre size folded into one factor
+const IDLE = 650;
+const CRUISE_MPH = 65;
+
+const sim = {
+  t: 0, phase: "idle", phaseT: 0, mph: 0, gear: 0, rpm: IDLE, shift: 0,
+  air1: 112, compressor: true, fuel: .62, oil: 32, water: 150,
+  brake: false, jake: false, cruise: false, cruiseSet: 0, left: false, right: false,
+  park: true, diff: false, beam: false,
+};
+
+function setPhase(name) { sim.phase = name; sim.phaseT = 0; }
+
+function stepSim(dt) {
+  const s = sim;
+  s.t += dt; s.phaseT += dt;
+  let accel = 0;
+  s.brake = false; s.jake = false; s.cruise = false;
+
+  if (s.phase === "idle") {
+    s.left = s.phaseT > 3;
+    if (s.phaseT > 6) { s.left = false; s.gear = 1; setPhase("accel"); }
+  } else if (s.phase === "accel") {
+    accel = s.shift > 0 ? -.15 : 3.2 / (1 + s.gear * .35);
+    if (s.mph >= CRUISE_MPH) setPhase("cruise");
+  } else if (s.phase === "cruise") {
+    s.cruise = true;
+    s.cruiseSet = CRUISE_MPH;
+    accel = (CRUISE_MPH + 1.5 * Math.sin(s.t * .3) - s.mph) * .5;
+    s.right = s.phaseT > 6 && s.phaseT < 11;
+    if (s.phaseT > 16) { s.right = false; setPhase("decel"); }
+  } else if (s.phase === "decel") {
+    s.jake = true; s.brake = s.mph < 35;
+    accel = s.brake ? -3 : -1.4;
+    if (s.mph <= 0) setPhase("idle");
+  }
+
+  s.mph = Math.max(0, s.mph + accel * dt);
+  s.shift = Math.max(0, s.shift - dt);
+  const geared = g => s.mph * RATIOS[g] * RPM_PER_MPH;
+  if (s.phase === "accel" && s.gear < 10 && geared(s.gear) > 1750) { s.gear++; s.shift = .5; }
+  if (s.phase === "decel" && s.gear > 1 && geared(s.gear) < 1050) s.gear--;
+  if (s.phase !== "accel" && s.mph < 1) s.gear = 0;
+
+  const rpmTarget = s.gear === 0 ? IDLE : Math.max(IDLE, geared(s.gear)) + (s.jake ? 150 : 0);
+  s.rpm += (rpmTarget - s.rpm) * (1 - Math.exp(-dt * 7));
+
+  if (s.air1 < 105) s.compressor = true;
+  if (s.air1 > 125) s.compressor = false;
+  s.air1 = Math.min(130, s.air1 + (s.compressor ? 2.6 * dt : 0) - (s.brake ? 3.4 * dt : 0));
+
+  s.oil = 18 + s.rpm * .022;
+  s.park = s.gear === 0 && s.mph < .5;
+  s.water += (192 - s.water) * dt * .04;
+  s.fuel = Math.max(0, s.fuel - dt * .0004);
+}
+
+function gaugeValues(s) {
+  return {
+    speed: s.mph / 90, rpm: s.rpm / 2500, air: s.air1 / 150,
+    fuel: s.fuel, oil: s.oil / 100, water: (s.water - 100) / 150,
+  };
+}
+
+const LIVE_TIMEOUT_MS = 3000;   // no game data for this long: fall back to the demo drive
+const RECONNECT_MS = 2000;
+let liveAt = -Infinity;
+
+function isLive() { return performance.now() - liveAt < LIVE_TIMEOUT_MS; }
+
+function applyLive(m) {
+  Object.assign(sim, {
+    mph: m.mph, rpm: m.rpm, gear: m.gear, air1: m.air_psi, fuel: m.fuel,
+    oil: m.oil_psi, water: m.water_f, cruise: m.cruise, cruiseSet: m.cruise_mph,
+    left: m.blinker_left, right: m.blinker_right, park: m.park_brake, jake: m.engine_brake,
+    diff: m.diff_lock, beam: m.high_beam,
+  });
+  liveAt = performance.now();
+}
+
+function connectLive() {
+  const ws = new WebSocket(`ws://${location.host}/ws/dash`);
+  ws.onmessage = event => {
+    try {
+      const m = JSON.parse(event.data);
+      if (m.type === "dash" && m.live) applyLive(m);
+    } catch (err) {
+      console.warn("Ignored bad dash message:", err.message);
+    }
+  };
+  ws.onclose = () => setTimeout(connectLive, RECONNECT_MS);
+}
+
+/* ---------- frame loop ---------- */
+
+const BOOT_SECONDS = 2.4;   // self-test sweep on key-on
+const smooth = { speed: 0, rpm: 0, air: 0, fuel: 0, oil: 0, water: 0 };
+
+function setText(el, text) { if (el.textContent !== text) el.textContent = text; }
+function setHtml(el, html) { if (el.innerHTML !== html) el.innerHTML = html; }
+
+function updateOverlay(ui, s, shown, booting, now) {
+  setText(ui.speed, String(Math.round(s.mph)));
+  setText(ui.gear, s.gear === 0 ? "N" : s.gear < 0 ? "R" : String(s.gear));
+  setText(ui.rpm, Math.round(s.rpm / 10) * 10 + " RPM");
+  setHtml(ui.cruise, `CRUISE · SET <b>${s.cruiseSet}</b>`);
+  ui.cruise.classList.toggle("on", booting || s.cruise);
+  setText(ui.air, Math.round(s.air1) + " PSI");
+  setText(ui.fuel, Math.round(s.fuel * 100) + "%");
+  setText(ui.oil, Math.round(s.oil) + " PSI");
+  setText(ui.water, Math.round(s.water) + "°F");
+  ui.air.classList.toggle("hot", s.air1 < 60);
+  ui.water.classList.toggle("hot", s.water > 220);
+  setText(ui.demo, isLive() ? "" : "DEMO");
+
+  for (const id of ["speed", "rpm"]) {
+    for (const n of ui.nums[id]) n.el.classList.toggle("on", n.t <= shown[id] + .002);
+  }
+
+  const blinkOn = (now % .7) < .35;
+  // the game already reports the blink phase; the demo blinks on its own
+  const phase = isLive() || blinkOn;
+  ui.left.classList.toggle("on", booting || (s.left && phase));
+  ui.right.classList.toggle("on", booting || (s.right && phase));
+  const tt = { park: s.park, jake: s.jake, diff: s.diff, beam: s.beam };
+  for (const id in tt) ui.tt[id].classList.toggle("on", booting || tt[id]);
+}
+
+function start() {
+  const ui = buildOverlay();
+  fitStage();
+  addEventListener("resize", fitStage);
+  const g = initGL();
+  let last = performance.now();
+  const t0 = last;
+
+  function frame(nowMs) {
+    const dt = Math.min(.05, (nowMs - last) / 1000);
+    last = nowMs;
+    const now = (nowMs - t0) / 1000;
+    const booting = now < BOOT_SECONDS;
+    if (!booting && !isLive()) stepSim(dt);
+
+    const target = gaugeValues(sim);
+    const sweep = Math.sin(Math.PI * Math.min(now / (BOOT_SECONDS * .9), 1));
+    for (const k in smooth) {
+      if (booting) smooth[k] = Math.max(sweep, k === "speed" || k === "rpm" ? 0 : target[k] * (1 - sweep));
+      else smooth[k] += (target[k] - smooth[k]) * (1 - Math.exp(-dt * 10));
+    }
+
+    updateOverlay(ui, sim, smooth, booting, now);
+
+    const gl = g.gl;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.uniform2f(g.uRes, canvas.width, canvas.height);
+    gl.uniform1f(g.uTime, now);
+    gl.uniform1f(g.uBoot, Math.min(1, now / .6));
+    gl.uniform4f(g.uBar, smooth.speed, smooth.rpm, sim.cruise ? sim.cruiseSet / 90 : -1, 0);
+    gl.uniform4f(g.uMini, smooth.air, smooth.fuel, smooth.oil, smooth.water);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+// Tap anywhere: go fullscreen and lock landscape (best effort, ignored where unsupported).
+document.addEventListener("click", async () => {
+  try {
+    if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+    await screen.orientation?.lock?.("landscape");
+  } catch (err) {
+    console.info("Fullscreen or orientation lock not available:", err.message);
+  }
+});
+
+try {
+  start();
+  connectLive();
+} catch (err) {
+  document.body.textContent = err.message;
+  console.error(err);
+}
+</script>
+</body>
+</html>
