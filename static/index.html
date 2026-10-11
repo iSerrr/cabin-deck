@@ -193,8 +193,10 @@
   .clock-tag { align-self: flex-start; padding: 2px 8px; border: 1px solid; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: .16em; }
   .clock-digital { font-size: 34px; font-weight: 700; letter-spacing: .02em; color: #E6E8EA; font-variant-numeric: tabular-nums; line-height: 1.05; }
   .clock-note { min-height: 14px; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #8B9199; line-height: 1.2; }
-  .week { display: flex; gap: 4px; }
+  .week { display: flex; gap: 4px; padding-bottom: 6px; }
   .week-day { flex: 1; height: 24px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: rgba(228,220,196,.4); background: linear-gradient(180deg, #131518, #1B1E22); box-shadow: inset 0 1px 3px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.04); }
+  .week-day { position: relative; }
+  .week-day.due::after { content: ""; position: absolute; left: 3px; right: 3px; bottom: -6px; height: 3px; border-radius: 2px; background: #4FD37A; box-shadow: 0 0 8px rgba(79,211,122,.8); }
   .week-day.today { color: #2A1A04; background: radial-gradient(circle at 50% 30%, #FFE3A6, #E8A13A 60%, #9A5F10); box-shadow: 0 0 10px rgba(232,161,58,.7), inset 0 1px 1px rgba(255,255,255,.5); }
   .fuel-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 170px minmax(0, 1fr) 150px; gap: 14px; align-items: center; padding: 0 6px; }
   .fuel-big { font-size: 40px; font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; line-height: 1; }
@@ -1035,9 +1037,13 @@
   }
 
   function weekStrip() {
-    // Monday..Sunday as single letters; set(index) lights today, set(-1) dims all.
+    // Monday..Sunday as single letters; set(today, due) lights today and underlines the
+    // delivery day. -1 means none.
     const cells = ["M", "T", "W", "T", "F", "S", "S"].map((letter) => h("div", { class: "week-day" }, letter));
-    const set = (today) => cells.forEach((cell, index) => cell.classList.toggle("today", index === today));
+    const set = (today, due = -1) => cells.forEach((cell, index) => {
+      cell.classList.toggle("today", index === today);
+      cell.classList.toggle("due", index === due);
+    });
     return { node: h("div", { class: "week" }, ...cells), set };
   }
 
@@ -1058,7 +1064,11 @@
         const minutes = nav.clock_min % 1440;
         game.clock.set(minutes, 0);
         setText(game.digital, `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`);
-        week.set(Math.floor(nav.clock_min / 1440) % 7);
+        // Delivery deadline day, only while it is ahead and within the coming week,
+        // so the weekday cannot be mistaken for the same day next week.
+        const due = nav.deadline_min !== null && nav.deadline_min >= 0 && nav.deadline_min < 7 * 1440
+          ? Math.floor((nav.clock_min + nav.deadline_min) / 1440) % 7 : -1;
+        week.set(Math.floor(nav.clock_min / 1440) % 7, due);
         setText(note, model.game.paused ? "PAUSED" : "");
       } else {
         game.clock.set(null, 0);
