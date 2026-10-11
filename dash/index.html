@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#050806">
+<title>Alpha Gen Dash</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@300;500;700&display=swap" rel="stylesheet">
+<style>
+  /* Prototype: second display for the Peterbilt 379 "Alpha Gen" cab.
+     WebGL draws dials, glow and chrome; HTML overlays only draw text.
+     Live data comes from server.py over /ws/dash; without the game it runs a demo drive. */
+  :root { --cream: #E4DCC4; --mint: #7BEFB5; --amber: #FFB547; --red: #FF4A3A; --blue: #6FB6FF; --dim: rgba(228,220,196,.28); }
+  html, body { margin: 0; height: 100%; background: #050806; overflow: hidden; }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Saira Semi Condensed", "Arial Narrow", sans-serif; color: var(--cream);
+    -webkit-user-select: none; user-select: none; touch-action: none; -webkit-tap-highlight-color: transparent;
+  }
+  #stage { position: relative; --u: 1px; }
+  #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .ov { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; line-height: 1; pointer-events: none; font-variant-numeric: tabular-nums; }
+
+  .num { font-size: calc(var(--u) * 3.3); font-weight: 500; color: var(--dim); transition: color .15s, text-shadow .15s; }
+  .num.on { color: var(--cream); text-shadow: 0 0 calc(var(--u) * .8) rgba(123,239,181,.55); }
+  .num.hot { color: rgba(255,74,58,.45); }
+  .num.hot.on { color: var(--red); text-shadow: 0 0 calc(var(--u) * .8) rgba(255,74,58,.7); }
+  .end { font-size: calc(var(--u) * 1.9); font-weight: 500; color: var(--dim); }
+
+  .hub-big { font-size: calc(var(--u) * 13); font-weight: 500; transform: translate(-50%, -50%) skewX(-6deg); text-shadow: 0 0 calc(var(--u) * 2) rgba(123,239,181,.35); }
+  .hub-sub { font-size: calc(var(--u) * 2.1); font-weight: 700; letter-spacing: .22em; color: var(--mint); opacity: .85; }
+  .gap { font-size: calc(var(--u) * 1.9); font-weight: 700; letter-spacing: .3em; color: var(--dim); }
+  .cap { font-size: calc(var(--u) * 1.7); font-weight: 700; letter-spacing: .28em; color: var(--dim); }
+  .val { font-size: calc(var(--u) * 2.6); font-weight: 500; color: var(--cream); }
+  .val.hot { color: var(--red); }
+
+  .brand { font-size: calc(var(--u) * 2); font-weight: 700; letter-spacing: .42em; color: var(--dim); transform: translate(0, -50%); }
+  .brand b { color: var(--cream); font-weight: 700; }
+  .meta { font-size: calc(var(--u) * 2.2); font-weight: 500; letter-spacing: .14em; color: var(--dim); transform: translate(-100%, -50%); }
+  .meta b { color: var(--cream); font-weight: 500; }
+
+  .blink { width: calc(var(--u) * 4.6); height: calc(var(--u) * 4.6); opacity: .14; transition: opacity .06s; }
+  .blink path { fill: var(--mint); }
+  .blink.on { opacity: 1; filter: drop-shadow(0 0 calc(var(--u) * 1) rgba(123,239,181,.9)); }
+
+  .tt {
+    padding: calc(var(--u) * .55) calc(var(--u) * 1.3); border: 1px solid rgba(228,220,196,.12); border-radius: calc(var(--u) * .6);
+    font-size: calc(var(--u) * 1.75); font-weight: 700; letter-spacing: .22em; color: rgba(228,220,196,.22);
+  }
+  .tt.on { color: var(--c); border-color: var(--c); box-shadow: 0 0 calc(var(--u) * 1.4) -0.2em var(--c), inset 0 0 calc(var(--u) * 1) -0.3em var(--c); text-shadow: 0 0 calc(var(--u) * .8) var(--c); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl"></canvas>
+</div>
+
+<script id="frag" type="x-shader/x-fragment">
+precision highp float;
+
+uniform vec2 uRes;
+uniform float uTime;
+uniform float uBoot;
+uniform vec3 uD[6];   // dial centre x, y and radius
+uniform vec4 uP[6];   // sweep, major ticks, minor ticks, track segments
+uniform vec3 uW[6];   // warn below, warn above (as 0..1 of scale), big-dial flag
+uniform vec2 uVal[6]; // needle value 0..1, second needle (-1 = none)
+uniform float uMark[6]; // set-point marker on the scale, e.g. cruise speed (-1 = none)
+
+const float PI = 3.14159265;
+const vec3 G0 = vec3(.027, .047, .035);   // #070C09
+const vec3 G1 = vec3(.039, .106, .078);   // #0A1B14
+const vec3 G2 = vec3(.055, .141, .106);   // #0E241B
+const vec3 G3 = vec3(.082, .192, .149);   // #153126 brand green
+const vec3 MINT = vec3(.48, .94, .71);
+const vec3 CREAM = vec3(.894, .863, .769); // #E4DCC4 legend cream
+const vec3 RED = vec3(1., .29, .23);
+
+float PX;
+
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+
+// Position along a clockwise sweep that is centred on 12 o'clock: 0 at start, 1 at end, negative just before start.
+float sweepT(vec2 q, float sw) {
+  float full = 2. * PI / sw;
+  float t = mod(PI * .5 + sw * .5 - atan(q.y, q.x), 2. * PI) / sw;
+  return t > .5 * (1. + full) ? t - full : t;
+}
+
+bool isHot(float t, vec2 warn) { return t < warn.x || t > warn.y; }
+
+vec3 zoneCol(float t, vec2 warn) {
+  return isHot(t, warn) ? RED : mix(MINT, CREAM, smoothstep(.15, 1., t) * .55);
+}
+
+vec3 chrome(float a, float u) {
+  // satin metal lit evenly by the cluster itself: no fake sun glare
+  float m = .5 + .06 * cos(2. * a - 1.2);
+  float bev = .55 + .45 * sin(u * PI);
+  vec3 c = mix(vec3(.10, .12, .11), vec3(.78, .80, .77), clamp(m * bev, 0., 1.));
+  c *= mix(vec3(1.), vec3(.84, 1., .92), .35);
+  c *= .65 + .35 * smoothstep(0., .25, u) * (1. - smoothstep(.75, 1., u));
+  return c;
+}
+
+vec3 needle(vec3 col, vec2 q, float R, float sw, float v, float r0, float r1, vec3 core, vec3 glow, float gk) {
+  float ang = PI * .5 + sw * .5 - v * sw;
+  vec2 d = vec2(cos(ang), sin(ang));
+  float h = clamp(dot(q, d), r0, r1);
+  float dn = length(q - d * h);
+  float w = max(mix(.022 * R, .007 * R, (h - r0) / (r1 - r0)), PX);
+  col += glow * exp(-dn / (.05 * R)) * .35 * gk * uBoot;
+  return mix(col, core, 1. - smoothstep(w - PX, w + PX, dn));
+}
+
+vec3 dial(vec3 col, vec2 p, vec3 D, vec4 P, vec3 W, vec2 V, float M) {
+  vec2 q = p - D.xy;
+  float R = D.z, r = length(q);
+  if (r > R * 1.5) return col;
+  float sw = P.x, v = V.x;
+  vec2 warn = W.xy;
+  float t = sweepT(q, sw);
+  float inSweep = step(0., t) * step(t, 1.);
+  float hot = isHot(t, warn) ? 1. : 0.;
+  float Rb = R * 1.075;
+
+  // drop shadow on the console
+  col *= 1. - .55 * (1. - smoothstep(Rb, R * 1.45, r)) * step(Rb, r);
+
+  // face: brand green with lathe grooves, lit from the top
+  float faceM = 1. - smoothstep(R - PX, R + PX, r);
+  vec3 face = mix(G3 * 1.15, G0 * .7, smoothstep(0., 1.5, length(q - vec2(0., R * .45)) / R));
+  face *= 1. + .035 * sin(r / R * 220.);
+  face *= .55 + .45 * (1. - smoothstep(.88 * R, R, r));
+  col = mix(col, face, faceM);
+
+  // segmented track that lights up to the needle
+  float rc = .905 * R, hw = .032 * R;
+  float band = (1. - smoothstep(hw - PX, hw + PX, abs(r - rc))) * inSweep;
+  float g = fract(t * P.w);
+  float seg = smoothstep(0., .12, g) * (1. - smoothstep(.78, .9, g));
+  float lit = 1. - smoothstep(v - .002, v + .002, t);
+  vec3 off = mix(G3 * 1.7, RED * .28, hot);
+  // a warning zone glows only while the needle is actually in it
+  vec3 on = hot > .5 && !isHot(v, warn) ? RED * .45 : zoneCol(t, warn) * 1.15;
+  col = mix(col, mix(off, on, lit), band * seg * faceM);
+  float ov = max(-t, t - v) * sw * r;
+  float da = length(vec2(max(abs(r - rc) - hw, 0.), max(ov, 0.)));
+  col += zoneCol(clamp(t, 0., v), warn) * exp(-da / (.045 * R)) * .22 * uBoot * step(.001, v);
+
+  // ticks
+  float tw = max(.011 * R, 1.2 * PX), tm = max(.005 * R, PX);
+  float dMaj = abs(fract(t * P.y + .5) - .5) / P.y * sw * r;
+  float dMin = abs(fract(t * P.z + .5) - .5) / P.z * sw * r;
+  float majR = smoothstep(.75 * R - PX, .75 * R + PX, r) * (1. - smoothstep(.855 * R - PX, .855 * R + PX, r));
+  float minR = smoothstep(.80 * R - PX, .80 * R + PX, r) * (1. - smoothstep(.855 * R - PX, .855 * R + PX, r));
+  float tick = max((1. - smoothstep(tw - PX, tw + PX, dMaj)) * majR,
+                   (1. - smoothstep(tm - PX, tm + PX, dMin)) * minR * .75) * step(-.01, t) * step(t, 1.01);
+  col = mix(col, mix(CREAM, RED, hot) * mix(.5, 1., lit), tick);
+
+  // sweep trail behind the needle
+  float trail = smoothstep(v - .14, v, t) * (1. - step(v, t)) * step(0., t);
+  float trailR = smoothstep(.3 * R, .5 * R, r) * (1. - smoothstep(.82 * R, .86 * R, r));
+  col += zoneCol(v, warn) * trail * trail * trailR * .22 * step(.001, v) * uBoot;
+
+  // set-point marker: a mint wedge just outside the track, pointing at the scale
+  if (M >= 0.) {
+    float am = abs(t - M) * sw * r;
+    float wm = mix(.006 * R, .036 * R, smoothstep(.945 * R, .99 * R, r));
+    float inR = smoothstep(.945 * R - PX, .945 * R + PX, r) * (1. - smoothstep(.99 * R - PX, .99 * R + PX, r));
+    col = mix(col, MINT * 1.1, (1. - smoothstep(wm - PX, wm + PX, am)) * inR);
+    col += MINT * exp(-length(vec2(max(am - wm, 0.), abs(r - .967 * R))) / (.02 * R)) * .35 * uBoot;
+  }
+
+  vec3 nGlow = zoneCol(v, warn);
+  if (W.z > .5) {
+    // big dial: dark hub holds the digital readout, needle floats outside it
+    // big dial: the needle starts under the hub, the hub floats above it and casts a soft shadow
+    float hr = .31 * R;
+    col = needle(col, q, R, sw, v, .12 * R, .88 * R, CREAM, nGlow, 1.);
+    float rs = length(q + vec2(0., .025 * R));
+    col *= 1. - .65 * (1. - smoothstep(hr * .96, hr + .08 * R, rs));
+    float hub = 1. - smoothstep(hr - PX, hr + PX, r);
+    col = mix(col, mix(G2 * .9, G0 * .6, smoothstep(0., hr, r)), hub);
+    col += MINT * exp(-abs(r - hr) / (.006 * R)) * .5 * uBoot;
+  } else {
+    if (V.y >= 0.) col = needle(col, q, R, sw, V.y, -.12 * R, .8 * R, CREAM * .85, CREAM, .5);
+    col = needle(col, q, R, sw, v, -.12 * R, .8 * R, V.y >= 0. ? MINT : CREAM, nGlow, 1.);
+    float cr = .13 * R;
+    float cap = 1. - smoothstep(cr - PX, cr + PX, r);
+    col = mix(col, chrome(atan(q.y, q.x) + .4, clamp(r / cr, 0., 1.)), cap);
+  }
+
+  // chrome bezel: the classic part
+  float bm = smoothstep(R - PX, R + PX, r) * (1. - smoothstep(Rb - PX, Rb + PX, r));
+  return mix(col, chrome(atan(q.y, q.x), clamp((r - R) / (Rb - R), 0., 1.)), bm);
+}
+
+void main() {
+  PX = 1. / uRes.y;
+  vec2 p = (gl_FragCoord.xy - .5 * uRes) / uRes.y;
+
+  // console: deep green, fine brushed lines, soft light behind the cluster
+  vec3 col = mix(G1, G0, smoothstep(0., .9, length(p - vec2(0., .35))));
+  col *= .94 + .06 * sin(p.y * 900.);
+  col += G3 * .5 * exp(-length(p * vec2(.6, 1.)) * 2.5);
+  float fade = 1. - smoothstep(.25, 1.05, abs(p.x));
+  col += MINT * (exp(-abs(p.y + .405) / .0016) + exp(-abs(p.y - .405) / .0016)) * fade * .3 * uBoot;
+
+  for (int i = 0; i < 6; i++) col = dial(col, p, uD[i], uP[i], uW[i], uVal[i], uMark[i]);
+
+  col *= 1. - .35 * smoothstep(.5, 1.25, length(p * vec2(.85, 1.4)));
+  col += (hash(gl_FragCoord.xy + fract(uTime) * 100.) - .5) * 2. / 255.;
+  gl_FragColor = vec4(clamp(col, 0., 1.), 1.);
+}
+</script>
+
+<script>
+"use strict";
+
+const ASPECT = 2.17;          // Galaxy S26 in landscape (≈ 19.5:9)
+const MAX_DPR = 2;            // cap render resolution to keep the shader cheap
+const SW_BIG = 1.5 * Math.PI;
+const SW_SMALL = 4 / 3 * Math.PI;
+
+const DIALS = [
+  { id: "speed", c: [-.40, 0], R: .36, sw: SW_BIG, maj: 9, min: 45, seg: 45, warn: [-1, 2], big: 1, label: i => i * 10, gap: "MPH" },
+  { id: "rpm",   c: [ .40, 0], R: .36, sw: SW_BIG, maj: 5, min: 25, seg: 50, warn: [-1, .84], big: 1, label: i => i * 5, gap: "×100 RPM" },
+  { id: "air",   c: [-.94,  .19], R: .12, sw: SW_SMALL, maj: 3, min: 15, seg: 30, warn: [.4, 2], ends: ["0", "150"], cap: "AIR" },
+  { id: "fuel",  c: [-.94, -.19], R: .12, sw: SW_SMALL, maj: 4, min: 8,  seg: 24, warn: [.125, 2], ends: ["E", "F"], cap: "FUEL" },
+  { id: "oil",   c: [ .94,  .19], R: .12, sw: SW_SMALL, maj: 4, min: 20, seg: 30, warn: [.15, 2], ends: ["0", "100"], cap: "OIL" },
+  { id: "water", c: [ .94, -.19], R: .12, sw: SW_SMALL, maj: 3, min: 15, seg: 30, warn: [-1, .8], ends: ["100", "250"], cap: "WATER" },
+];
+
+const TELLTALES = [
+  { id: "park",   text: "PARK BRAKE", c: "var(--red)" },
+  { id: "jake",   text: "ENGINE BRAKE", c: "var(--amber)" },
+  { id: "cruise", text: "CRUISE", c: "var(--mint)" },
+  { id: "diff",   text: "DIFF LOCK", c: "var(--amber)" },
+  { id: "beam",   text: "HIGH BEAM", c: "var(--blue)" },
+];
+
+const stage = document.getElementById("stage");
+const canvas = document.getElementById("gl");
+
+/* ---------- layout ---------- */
+
+function place(el, x, y) {
+  el.style.left = (x / ASPECT + .5) * 100 + "%";
+  el.style.top = (.5 - y) * 100 + "%";
+}
+
+function addEl(cls, html, x, y) {
+  const el = document.createElement("div");
+  el.className = "ov " + cls;
+  el.innerHTML = html;
+  place(el, x, y);
+  stage.appendChild(el);
+  return el;
+}
+
+function pointOnDial(d, t, rr) {
+  const a = Math.PI / 2 + d.sw / 2 - t * d.sw;
+  return [d.c[0] + Math.cos(a) * rr * d.R, d.c[1] + Math.sin(a) * rr * d.R];
+}
+
+function buildOverlay() {
+  const ui = { nums: {} };
+  for (const d of DIALS) {
+    if (d.big) {
+      ui.nums[d.id] = [];
+      for (let i = 0; i <= d.maj; i++) {
+        const t = i / d.maj;
+        const hot = t < d.warn[0] || t > d.warn[1] + 1e-6;
+        const el = addEl("num" + (hot ? " hot" : ""), d.label(i), ...pointOnDial(d, t, .64));
+        ui.nums[d.id].push({ t, el });
+      }
+      addEl("gap", d.gap, d.c[0], d.c[1] - .74 * d.R);
+    } else {
+      addEl("end", d.ends[0], ...pointOnDial(d, 0, .6));
+      addEl("end", d.ends[1], ...pointOnDial(d, 1, .6));
+      addEl("cap", d.cap, d.c[0], d.c[1] - .45 * d.R);
+      ui[d.id] = addEl("val", "", d.c[0], d.c[1] - .78 * d.R);
+    }
+  }
+  ui.speed = addEl("hub-big", "0", -.40, .012);
+  ui.gear = addEl("hub-big", "N", .40, .025);
+  ui.rpm = addEl("hub-sub", "650", .40, -.075);
+  ui.set = addEl("hub-sub", "", -.40, -.075);
+
+  const brand = addEl("brand", "<b>379</b> · ALPHA GEN", -1.02, .455);
+  brand.style.transform = "translate(0, -50%)";
+  ui.meta = addEl("meta", "", 1.02, .455);
+
+  const arrow = d => `<svg class="blink" viewBox="0 0 24 24"><path d="${d}"/></svg>`;
+  ui.left = addEl("", arrow("M10 4 2 12l8 8v-5h12V9H10z"), -.075, .45).firstChild;
+  ui.right = addEl("", arrow("M14 4l8 8-8 8v-5H2V9h12z"), .075, .45).firstChild;
+
+  ui.tt = {};
+  TELLTALES.forEach((t, i) => {
+    const el = addEl("tt", t.text, (i - (TELLTALES.length - 1) / 2) * .26, -.455);
+    el.style.setProperty("--c", t.c);
+    ui.tt[t.id] = el;
+  });
+  return ui;
+}
+
+function fitStage() {
+  const w = Math.min(innerWidth, innerHeight * ASPECT);
+  const h = w / ASPECT;
+  stage.style.width = w + "px";
+  stage.style.height = h + "px";
+  stage.style.setProperty("--u", h / 100 + "px");
+  const dpr = Math.min(devicePixelRatio || 1, MAX_DPR);
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+}
+
+/* ---------- WebGL ---------- */
+
+function compile(gl, type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error("Shader compile failed: " + gl.getShaderInfoLog(s));
+  return s;
+}
+
+function initGL() {
+  const gl = canvas.getContext("webgl", { antialias: false, alpha: false, powerPreference: "high-performance" });
+  if (!gl) throw new Error("WebGL is not available in this browser.");
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, "attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}"));
+  gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, document.getElementById("frag").textContent));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error("Shader link failed: " + gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  const u = name => gl.getUniformLocation(prog, name);
+  gl.uniform3fv(u("uD"), DIALS.flatMap(d => [d.c[0], d.c[1], d.R]));
+  gl.uniform4fv(u("uP"), DIALS.flatMap(d => [d.sw, d.maj, d.min, d.seg]));
+  gl.uniform3fv(u("uW"), DIALS.flatMap(d => [d.warn[0], d.warn[1], d.big || 0]));
+  return { gl, uRes: u("uRes"), uTime: u("uTime"), uBoot: u("uBoot"), uVal: u("uVal"), uMark: u("uMark") };
+}
+
+/* ---------- truck state: live telemetry or a simulated demo drive ---------- */
+
+const RATIOS = [0, 12.8, 9.25, 6.7, 4.9, 3.75, 2.73, 1.97, 1.43, 1.0, .73]; // Eaton 10-speed, approx
+const RPM_PER_MPH = 30.6;   // final drive and tyre size folded into one factor
+const IDLE = 650;
+const CRUISE_MPH = 65;
+
+const sim = {
+  t: 0, phase: "idle", phaseT: 0, mph: 0, gear: 0, rpm: IDLE, shift: 0,
+  air1: 112, air2: 108, compressor: true, fuel: .62, oil: 32, water: 150, odo: 412386.4,
+  brake: false, jake: false, cruise: false, cruiseSet: 0, left: false, right: false,
+  park: true, diff: false, beam: false,
+};
+
+function setPhase(name) { sim.phase = name; sim.phaseT = 0; }
+
+function stepSim(dt) {
+  const s = sim;
+  s.t += dt; s.phaseT += dt;
+  let accel = 0;
+  s.brake = false; s.jake = false; s.cruise = false;
+
+  if (s.phase === "idle") {
+    s.left = s.phaseT > 3;
+    if (s.phaseT > 6) { s.left = false; s.gear = 1; setPhase("accel"); }
+  } else if (s.phase === "accel") {
+    accel = s.shift > 0 ? -.15 : 3.2 / (1 + s.gear * .35);
+    if (s.mph >= CRUISE_MPH) setPhase("cruise");
+  } else if (s.phase === "cruise") {
+    s.cruise = true;
+    s.cruiseSet = CRUISE_MPH;
+    accel = (CRUISE_MPH + 1.5 * Math.sin(s.t * .3) - s.mph) * .5;
+    s.right = s.phaseT > 6 && s.phaseT < 11;
+    if (s.phaseT > 16) { s.right = false; setPhase("decel"); }
+  } else if (s.phase === "decel") {
+    s.jake = true; s.brake = s.mph < 35;
+    accel = s.brake ? -3 : -1.4;
+    if (s.mph <= 0) setPhase("idle");
+  }
+
+  s.mph = Math.max(0, s.mph + accel * dt);
+  s.shift = Math.max(0, s.shift - dt);
+  const geared = g => s.mph * RATIOS[g] * RPM_PER_MPH;
+  if (s.phase === "accel" && s.gear < 10 && geared(s.gear) > 1750) { s.gear++; s.shift = .5; }
+  if (s.phase === "decel" && s.gear > 1 && geared(s.gear) < 1050) s.gear--;
+  if (s.phase !== "accel" && s.mph < 1) s.gear = 0;
+
+  const rpmTarget = s.gear === 0 ? IDLE : Math.max(IDLE, geared(s.gear)) + (s.jake ? 150 : 0);
+  s.rpm += (rpmTarget - s.rpm) * (1 - Math.exp(-dt * 7));
+
+  if (s.air1 < 105) s.compressor = true;
+  if (s.air1 > 125) s.compressor = false;
+  const airIn = s.compressor ? 2.6 * dt : 0;
+  const airOut = s.brake ? 3.4 * dt : 0;
+  s.air1 = Math.min(130, s.air1 + airIn - airOut);
+  s.air2 = Math.min(128, s.air2 + airIn * .95 - airOut * 1.1);
+
+  s.oil = 18 + s.rpm * .022;
+  s.park = s.gear === 0 && s.mph < .5;
+  s.water += (192 - s.water) * dt * .04;
+  s.fuel = Math.max(0, s.fuel - dt * .0004);
+  s.odo += s.mph * dt / 3600;
+}
+
+function gaugeValues(s) {
+  return {
+    speed: s.mph / 90, rpm: s.rpm / 2500, air: s.air1 / 150, air2: s.air2 / 150,
+    fuel: s.fuel, oil: s.oil / 100, water: (s.water - 100) / 150,
+  };
+}
+
+const LIVE_TIMEOUT_MS = 3000;   // no game data for this long: fall back to the demo drive
+const RECONNECT_MS = 2000;
+let liveAt = -Infinity;
+
+function isLive() { return performance.now() - liveAt < LIVE_TIMEOUT_MS; }
+
+function applyLive(m) {
+  Object.assign(sim, {
+    mph: m.mph, rpm: m.rpm, gear: m.gear, air1: m.air_psi, air2: m.air_psi, fuel: m.fuel,
+    oil: m.oil_psi, water: m.water_f, cruise: m.cruise, cruiseSet: m.cruise_mph,
+    left: m.blinker_left, right: m.blinker_right, park: m.park_brake, jake: m.engine_brake,
+    diff: m.diff_lock, beam: m.high_beam, odo: m.odometer_mi,
+  });
+  liveAt = performance.now();
+}
+
+function connectLive() {
+  const ws = new WebSocket(`ws://${location.host}/ws/dash`);
+  ws.onmessage = event => {
+    try {
+      const m = JSON.parse(event.data);
+      if (m.type === "dash" && m.live) applyLive(m);
+    } catch (err) {
+      console.warn("Ignored bad dash message:", err.message);
+    }
+  };
+  ws.onclose = () => setTimeout(connectLive, RECONNECT_MS);
+}
+
+/* ---------- frame loop ---------- */
+
+const BOOT_SECONDS = 2.4;   // classic needle self-test sweep on key-on
+const smooth = { speed: 0, rpm: 0, air: 0, air2: 0, fuel: 0, oil: 0, water: 0 };
+
+function setText(el, text) { if (el.textContent !== text) el.textContent = text; }
+
+function updateOverlay(ui, s, shown, booting, now) {
+  setText(ui.speed, String(Math.round(s.mph)));
+  setText(ui.set, s.cruise ? `SET ${s.cruiseSet}` : "");
+  setText(ui.gear, s.gear === 0 ? "N" : s.gear < 0 ? "R" : String(s.gear));
+  setText(ui.rpm, Math.round(s.rpm / 10) * 10 + " RPM");
+  setText(ui.air, `${Math.round(s.air1)} · ${Math.round(s.air2)}`);
+  setText(ui.fuel, Math.round(s.fuel * 100) + "%");
+  setText(ui.oil, String(Math.round(s.oil)));
+  setText(ui.water, Math.round(s.water) + "°");
+  ui.air.classList.toggle("hot", s.air1 < 60);
+  ui.water.classList.toggle("hot", s.water > 220);
+
+  const clock = new Date().toTimeString().slice(0, 5);
+  const source = isLive() ? "" : "DEMO &nbsp;·&nbsp; ";
+  if (ui.meta.dataset.k !== source + clock + Math.floor(s.odo)) {
+    ui.meta.dataset.k = source + clock + Math.floor(s.odo);
+    ui.meta.innerHTML = `${source}ODO <b>${Math.floor(s.odo).toLocaleString("en-US").replace(",", " ")}</b> MI &nbsp;·&nbsp; <b>${clock}</b>`;
+  }
+
+  for (const id of ["speed", "rpm"]) {
+    for (const n of ui.nums[id]) n.el.classList.toggle("on", n.t <= shown[id] + .002);
+  }
+
+  const blinkOn = (now % .7) < .35;
+  // the game already reports the blink phase; the demo blinks on its own
+  const phase = isLive() || blinkOn;
+  ui.left.classList.toggle("on", booting || (s.left && phase));
+  ui.right.classList.toggle("on", booting || (s.right && phase));
+  const tt = { park: s.park, jake: s.jake, cruise: s.cruise, diff: s.diff, beam: s.beam };
+  for (const id in tt) ui.tt[id].classList.toggle("on", booting || tt[id]);
+}
+
+function start() {
+  const ui = buildOverlay();
+  fitStage();
+  addEventListener("resize", fitStage);
+  const g = initGL();
+  const vals = new Float32Array(12);
+  let last = performance.now();
+  const t0 = last;
+
+  function frame(nowMs) {
+    const dt = Math.min(.05, (nowMs - last) / 1000);
+    last = nowMs;
+    const now = (nowMs - t0) / 1000;
+    const booting = now < BOOT_SECONDS;
+    if (!booting && !isLive()) stepSim(dt);
+
+    const target = gaugeValues(sim);
+    const sweep = Math.sin(Math.PI * Math.min(now / (BOOT_SECONDS * .9), 1));
+    for (const k in smooth) {
+      if (booting) smooth[k] = Math.max(sweep, k === "speed" || k === "rpm" ? 0 : target[k] * (1 - sweep));
+      else smooth[k] += (target[k] - smooth[k]) * (1 - Math.exp(-dt * 10));
+    }
+    const order = [["speed", -1], ["rpm", -1], ["air", "air2"], ["fuel", -1], ["oil", -1], ["water", -1]];
+    order.forEach(([a, b], i) => {
+      vals[i * 2] = smooth[a];
+      vals[i * 2 + 1] = b === -1 ? -1 : smooth[b];
+    });
+
+    updateOverlay(ui, sim, smooth, booting, now);
+
+    const gl = g.gl;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.uniform2f(g.uRes, canvas.width, canvas.height);
+    gl.uniform1f(g.uTime, now);
+    gl.uniform1f(g.uBoot, Math.min(1, now / .6));
+    gl.uniform2fv(g.uVal, vals);
+    gl.uniform1fv(g.uMark, [sim.cruise ? sim.cruiseSet / 90 : -1, -1, -1, -1, -1, -1]);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+// Tap anywhere: go fullscreen and lock landscape (best effort, ignored where unsupported).
+document.addEventListener("click", async () => {
+  try {
+    if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+    await screen.orientation?.lock?.("landscape");
+  } catch (err) {
+    console.info("Fullscreen or orientation lock not available:", err.message);
+  }
+});
+
+try {
+  start();
+  connectLive();
+} catch (err) {
+  document.body.textContent = err.message;
+  console.error(err);
+}
+</script>
+</body>
+</html>

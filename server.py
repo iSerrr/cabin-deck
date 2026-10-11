@@ -1,5 +1,6 @@
 """Cab Deck server: serves the tablet panel, presses vJoy buttons and
-reports truck state from game telemetry.
+reports truck state from game telemetry. A second port serves the read-only
+Alpha Gen instrument cluster (dash/index.html).
 
 Run on Windows:  python server.py
 Run on macOS:    python server.py --dry-run
@@ -23,7 +24,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Callable
 
 import uvicorn
-from fastapi import FastAPI, Query, WebSocket
+from fastapi import FastAPI, Query, Request, WebSocket
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -33,6 +34,8 @@ STATIC_DIR = BASE_DIR / "static"
 INDEX_PATH = STATIC_DIR / "index.html"
 LOG_PATH = BASE_DIR / "logs" / "cab_deck.log"
 DEFAULT_PORT = 8000
+DASH_INDEX_PATH = BASE_DIR / "dash" / "index.html"
+DEFAULT_DASH_PORT = 8701
 
 BUTTON_ID_PATTERN = re.compile(r"^cab_deck_btn_(\d{3})$")
 NAMED_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
@@ -56,6 +59,9 @@ PACE_MAX_STEP_MINUTES = 30    # a bigger clock jump means sleep, ferry or train:
 PACE_MAX_STEP_KM = 5.0        # a bigger odometer jump means a teleport: start over
 PACE_MOVING_KM = 0.01         # odometer change that counts as moving within one game minute
 PACE_MAX_SAMPLES = 5000
+
+MS_TO_MPH = 2.236936
+KM_TO_MI = 0.621371
 
 INDICATORS = (
     "engine",
@@ -148,6 +154,8 @@ class DeckState:
     release_tasks: dict[int, asyncio.Task] = field(default_factory=dict)
     switches: dict[str, SwitchState] = field(default_factory=dict)
     sockets: set[WebSocket] = field(default_factory=set)
+    dash_sockets: set[WebSocket] = field(default_factory=set)
+    dash: dict[str, Any] = field(default_factory=lambda: {"type": "dash", "live": False})
     game: dict[str, Any] = field(default_factory=lambda: {"telemetry": False})
     indicators: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_state_message: dict[str, Any] | None = None
@@ -584,6 +592,31 @@ def compute_nav(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def compute_dash(data: dict[str, Any]) -> dict[str, Any]:
+    """Instrument cluster values in the units ATS shows: mph, psi, °F, miles."""
+    capacity = float(data.get("fuelCapacity") or 0.0)
+    return {
+        "type": "dash",
+        "live": True,
+        "mph": round(abs(float(data.get("speed") or 0.0)) * MS_TO_MPH, 2),
+        "rpm": round(float(data.get("engineRpm") or 0.0)),
+        "gear": int(data.get("gearDashboard") or 0),
+        "air_psi": round(float(data.get("airPressure") or 0.0), 1),
+        "fuel": round(float(data.get("fuel") or 0.0) / capacity, 4) if capacity > 0 else 0.0,
+        "oil_psi": round(float(data.get("oilPressure") or 0.0), 1),
+        "water_f": round(float(data.get("waterTemperature") or 0.0) * 9 / 5 + 32, 1),
+        "cruise": bool(data.get("cruiseControl")),
+        "cruise_mph": round(float(data.get("cruiseControlSpeed") or 0.0) * MS_TO_MPH),
+        "blinker_left": bool(data.get("blinkerLeftOn")),
+        "blinker_right": bool(data.get("blinkerRightOn")),
+        "park_brake": bool(data.get("parkBrake")),
+        "engine_brake": bool(data.get("motorBrake")),
+        "diff_lock": bool(data.get("differentialLock")),
+        "high_beam": bool(data.get("lightsBeamHigh")),
+        "odometer_mi": round(float(data.get("truckOdometer") or 0.0) * KM_TO_MI, 1),
+    }
+
+
 def reset_pace(pace: DrivePace, clock: int, odometer: float) -> None:
     pace.samples.clear()
     pace.last_clock = clock
@@ -643,10 +676,12 @@ def update_from_telemetry(state: DeckState, data: dict[str, Any] | None) -> None
     if data is None:
         state.game = {"telemetry": False}
         state.indicators = {}
+        state.dash = {"type": "dash", "live": False}
         return
     active = bool(data.get("sdkActive"))
     state.game = {"telemetry": True, "active": active, "paused": bool(data.get("paused"))}
     state.indicators = compute_indicators(data) if active else {}
+    state.dash = compute_dash(data) if active else {"type": "dash", "live": False}
     if active:
         record_pace(state.pace, data)
         add_rest_range(state.indicators["nav"], pace_estimate(state.pace))
@@ -694,7 +729,12 @@ async def telemetry_loop(state: DeckState) -> None:
     while True:
         update_from_telemetry(state, state.read_telemetry())
         await publish_state(state)
+        await publish_dash(state)
         await asyncio.sleep(TELEMETRY_POLL_S)
+
+
+async def publish_dash(state: DeckState) -> None:
+    await asyncio.gather(*(ws.send_json(state.dash) for ws in list(state.dash_sockets)), return_exceptions=True)
 
 
 # --- Button state ------------------------------------------------------------
@@ -886,7 +926,7 @@ def handle_message(state: DeckState, text: str, held: set[int]) -> dict[str, Any
 # --- Web app -----------------------------------------------------------------
 
 
-def create_app(state: DeckState) -> FastAPI:
+def create_app(state: DeckState, dash_port: int) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         telemetry_task = asyncio.create_task(telemetry_loop(state))
@@ -902,8 +942,30 @@ def create_app(state: DeckState) -> FastAPI:
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/")
-    async def index() -> FileResponse:
-        return FileResponse(INDEX_PATH, headers={"Cache-Control": "no-store"})
+    async def index(request: Request) -> FileResponse:
+        # The same app listens on both ports; the dash port serves the instrument cluster.
+        server = request.scope.get("server")
+        page = DASH_INDEX_PATH if server and server[1] == dash_port else INDEX_PATH
+        return FileResponse(page, headers={"Cache-Control": "no-store"})
+
+    @app.get("/dash")
+    async def dash_index() -> FileResponse:
+        return FileResponse(DASH_INDEX_PATH, headers={"Cache-Control": "no-store"})
+
+    @app.websocket("/ws/dash")
+    async def dash_websocket(websocket: WebSocket) -> None:
+        # Read-only stream: the cluster never sends commands, so nothing can be pressed from here.
+        await websocket.accept()
+        client = f"{websocket.client.host}:{websocket.client.port}" if websocket.client else "unknown"
+        state.dash_sockets.add(websocket)
+        log.info("Dash connected: %s (dash clients: %d)", client, len(state.dash_sockets))
+        try:
+            await websocket.send_json(state.dash)
+            while (await websocket.receive())["type"] != "websocket.disconnect":
+                pass
+        finally:
+            state.dash_sockets.discard(websocket)
+            log.info("Dash disconnected: %s (dash clients: %d)", client, len(state.dash_sockets))
 
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
@@ -915,6 +977,7 @@ def create_app(state: DeckState) -> FastAPI:
             "controls": len(state.controls_by_id),
             "pressed": sorted(state.pressed),
             "clients": len(state.sockets),
+            "dash_clients": len(state.dash_sockets),
             "game": state.game,
             "indicators": state.indicators,
             "switches": {switch_id: switch.position for switch_id, switch in state.switches.items()},
@@ -1000,10 +1063,24 @@ def _primary_ipv4() -> str | None:
             return None
 
 
+def bind_socket(port: int) -> socket.socket:
+    """Listening socket on all interfaces, the way uvicorn binds its own."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("0.0.0.0", port))
+    except OSError as error:
+        sock.close()
+        raise OSError(f"Cannot listen on port {port}: {error}. Is another server already running?") from error
+    sock.set_inheritable(True)
+    return sock
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Cab Deck tablet panel server.")
     parser.add_argument("--dry-run", action="store_true", help="log button presses instead of using vJoy")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--dash-port", type=int, default=DEFAULT_DASH_PORT, help="port of the Alpha Gen instrument cluster")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     return parser.parse_args()
 
@@ -1042,12 +1119,22 @@ def main() -> None:
 
     log.info("Loaded %d controls. vJoy buttons available: %s", len(state.controls_by_id), vjoy_buttons or "unknown")
     addresses = local_ipv4_addresses() or ["<this-pc-ip>"]
+    try:
+        sockets = [bind_socket(args.port), bind_socket(args.dash_port)]
+    except OSError as error:
+        log.error("Startup failed: %s", error)
+        sys.exit(1)
+
     print("\nOpen the panel on the tablet:")
     for address in addresses:
         print(f"  http://{address}:{args.port}")
+    print("Open the Alpha Gen dash on the phone:")
+    for address in addresses:
+        print(f"  http://{address}:{args.dash_port}")
     print("Press Ctrl+C to stop.\n", flush=True)
 
-    uvicorn.run(create_app(state), host="0.0.0.0", port=args.port, log_config=None, access_log=False)
+    config = uvicorn.Config(create_app(state, args.dash_port), log_config=None, access_log=False)
+    uvicorn.Server(config).run(sockets=sockets)
 
 
 if __name__ == "__main__":
