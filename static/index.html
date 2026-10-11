@@ -41,6 +41,9 @@
     /* "on" colour of lamps and keys, and the chrome of rings and bezels */
     --ok: #4FD37A;
     --ok-lit: #86F2AA;
+    --muted: #8B9199;      /* secondary text */
+    --faint: #6B717A;      /* hints */
+    --off-ink: #5E646C;    /* glyphs and text of controls that are off */
     --metal: linear-gradient(160deg, #f2f1ec, #8f8a80 40%, #2e2c29 60%, #c9c5bc);
     --ring: linear-gradient(160deg, #e6e3dc, #5a574f 50%, #2e2c29 60%, #b5b0a6);
   }
@@ -79,8 +82,12 @@
     --key-pressed: linear-gradient(180deg, #0A1510, #12241B);
     --legend: #E4DCC4;
     --track: linear-gradient(180deg, #040906, #0A140F);
-    --ok: #7BEFB5;
-    --ok-lit: #B8F9D6;
+    /* tones taken from the v2 dash as it renders: soft sage-mint light, warm cream greys */
+    --ok: #8EE6BC;
+    --ok-lit: #C4F6DB;
+    --muted: rgba(228,220,196,.5);
+    --faint: rgba(228,220,196,.32);
+    --off-ink: rgba(228,220,196,.3);
     --metal: linear-gradient(160deg, #6F7F78, #26332D 45%, #121B17 60%, #4A5A53);
     --ring: linear-gradient(160deg, rgba(160,178,168,.55), rgba(60,75,68,.5));
   }
@@ -106,18 +113,17 @@
   [data-finish="alpha"] .well { background: linear-gradient(180deg, #08130E, #0C1913); }
   [data-finish="alpha"] .segs { background: linear-gradient(180deg, rgba(160,182,170,.3), rgba(160,182,170,.12)); box-shadow: 0 3px 6px rgba(0,0,0,.6); }
   [data-finish="alpha"] .lever-rail { background: linear-gradient(180deg, #020403, #07100B); }
-  [data-finish="alpha"] .lever-fill { background: linear-gradient(180deg, #B8F9D6, #4FC98E); box-shadow: 0 0 10px rgba(123,239,181,.55), 0 0 26px rgba(123,239,181,.22); }
+  [data-finish="alpha"] .lever-fill { background: linear-gradient(180deg, var(--ok-lit), var(--ok)); box-shadow: 0 0 10px color-mix(in oklab, var(--ok) 40%, transparent), 0 0 26px color-mix(in oklab, var(--ok) 16%, transparent); }
   [data-finish="alpha"] .lever-knob { box-shadow: 0 8px 14px rgba(0,0,0,.8); }
   [data-finish="alpha"] .lever-knob::after {
-    background: radial-gradient(circle at 50% 40%, #1C2E25, #0E1813 70%), linear-gradient(#7BEFB5, #7BEFB5);
+    background: radial-gradient(circle at 50% 40%, #1C2E25, #0E1813 70%), linear-gradient(var(--ok), var(--ok));
     background-size: 100% 100%, 4px 16px; background-position: center, center; background-repeat: no-repeat;
-    box-shadow: inset 0 0 0 1px rgba(160,182,170,.25), 0 0 8px rgba(123,239,181,.25);
+    box-shadow: inset 0 0 0 1px rgba(160,182,170,.25), 0 0 8px color-mix(in oklab, var(--ok) 25%, transparent);
   }
   [data-finish="alpha"] .clock-face { background: radial-gradient(circle at 50% 40%, #12241B, #08110C 75%); }
   [data-finish="alpha"] .clock-tick.major { background: var(--legend); }
   [data-finish="alpha"] .week-day { background: linear-gradient(180deg, #0B1712, #11221A); }
   [data-finish="alpha"] .nav-cell { background: rgba(0,0,0,.22); box-shadow: inset 0 0 0 1px rgba(160,182,170,.08); }
-  [data-finish="alpha"] .fuel-cap, [data-finish="alpha"] .nav-sub, [data-finish="alpha"] .clock-note { color: rgba(228,220,196,.5); }
 
   #stage { position: fixed; inset: 0; overflow: hidden; background: #08090B; }
   #panel {
@@ -231,7 +237,7 @@
   .cab-row > .tile:nth-child(-n+2) { flex: 1.15; }
   .cab-row > .tile:last-child { flex: .7; }
   .tile.compact { gap: 4px; padding: 6px 4px; }
-  .desc { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: #6B717A; text-align: center; }
+  .desc { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: var(--faint); text-align: center; }
 
   /* CLOCK: in-game and real time side by side. */
   .clock-zone { flex: none; height: 236px; }
@@ -252,7 +258,7 @@
   .clock-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
   .clock-tag { align-self: flex-start; padding: 2px 8px; border: 1px solid; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: .16em; }
   .clock-digital { font-size: 34px; font-weight: 700; letter-spacing: .02em; color: #E6E8EA; font-variant-numeric: tabular-nums; line-height: 1.05; }
-  .clock-note { min-height: 14px; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #8B9199; line-height: 1.2; }
+  .clock-note { min-height: 14px; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: var(--muted); line-height: 1.2; }
   .week { display: flex; gap: 4px; padding-bottom: 6px; }
   .week-day { flex: 1; height: 24px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: rgba(228,220,196,.4); background: linear-gradient(180deg, #131518, #1B1E22); box-shadow: inset 0 1px 3px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.04); }
   .week-day { position: relative; }
@@ -261,7 +267,7 @@
   .fuel-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 170px minmax(0, 1fr) 150px; gap: 14px; align-items: center; padding: 0 6px; }
   .fuel-big { font-size: 40px; font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; line-height: 1; }
   .fuel-unit { font-size: 15px; font-weight: 700; letter-spacing: .12em; margin-left: 6px; }
-  .fuel-cap { font-size: 12px; font-weight: 700; letter-spacing: .18em; color: #8B9199; margin-bottom: 6px; }
+  .fuel-cap { font-size: 12px; font-weight: 700; letter-spacing: .18em; color: var(--muted); margin-bottom: 6px; }
   .fuel-track { position: relative; height: 26px; border-radius: 6px; background: var(--track); box-shadow: inset 0 3px 8px rgba(0,0,0,.9), inset 0 0 0 1px #000; overflow: hidden; }
   .fuel-fill { position: absolute; left: 0; top: 0; bottom: 0; transition: width .6s cubic-bezier(.4,0,.2,1), background .3s; }
   .fuel-tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: rgba(0,0,0,.55); }
@@ -273,7 +279,7 @@
   .nav-val { font-size: 26px; font-weight: 700; letter-spacing: .01em; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; color: #E6E8EA; }
   .nav-val.big { font-size: 34px; }
   .nav-sub.strong { font-size: 14px; font-weight: 700; color: var(--legend); letter-spacing: .02em; }
-  .nav-sub { font-size: 12px; font-weight: 600; letter-spacing: .06em; color: #8B9199; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nav-sub { font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .zone-in.strip { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px 8px; }
   .span { grid-column: 1 / -1; }
   .title-row { display: flex; align-items: center; justify-content: space-between; }
@@ -307,7 +313,7 @@
   .bar { position: absolute; left: 0; right: 0; top: 0; height: 3px; }
   .lbl { font-size: 18px; font-weight: 600; letter-spacing: .06em; color: var(--legend); text-align: center; line-height: 1.1; }
   .st { font-size: 13px; font-weight: 600; letter-spacing: .06em; }
-  .hint { font-size: 12px; font-weight: 600; letter-spacing: .14em; color: #6B717A; }
+  .hint { font-size: 12px; font-weight: 600; letter-spacing: .14em; color: var(--faint); }
 
   /* Segmented switches */
   .well {
@@ -402,9 +408,9 @@
   #setup .zone-in { grid-template-rows: 24px repeat(4, minmax(0, 1fr)) 64px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .bind { align-items: flex-start; justify-content: center; gap: 2px; padding: 8px 12px; }
   .bind .num { font-size: 22px; font-weight: 700; letter-spacing: .04em; color: #E6E8EA; font-variant-numeric: tabular-nums; }
-  .bind .game { font-size: 12px; font-weight: 600; letter-spacing: .06em; color: #6B717A; }
+  .bind .game { font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--faint); }
   .bind .what { font-size: 15px; font-weight: 700; letter-spacing: .06em; color: var(--legend); }
-  .bind .act { font-size: 12px; font-weight: 600; color: #8B9199; }
+  .bind .act { font-size: 12px; font-weight: 600; color: var(--muted); }
   .setup-foot { display: flex; align-items: center; gap: 18px; }
   .setup-foot .hint { letter-spacing: .06em; }
   .setup-foot > .hint { flex: 1; }
@@ -452,7 +458,7 @@
     background: #08090B;
     font-size: 20px;
     letter-spacing: .1em;
-    color: #8B9199;
+    color: var(--muted);
   }
   @media (orientation: portrait) { #rotate { display: flex; } }
 </style>
@@ -489,7 +495,7 @@
   const HAPTIC = { tap: 12, hold: 25, button: 12, detent: 10, tick: 6, ui: 6, linkLost: [40, 60, 40] };
 
   // GRN follows the finish (CSS --ok), so ALPHA turns every "on" green into its mint.
-  const AMB = "#E8A13A", GRN = "var(--ok)", BLU = "#4C9DF0", RED = "#E2463C", ORG = "#F08A2E", MUTED = "#8B9199";
+  const AMB = "#E8A13A", GRN = "var(--ok)", BLU = "#4C9DF0", RED = "#E2463C", ORG = "#F08A2E", MUTED = "var(--muted)";
   const SVG_NS = "http://www.w3.org/2000/svg";
 
   const ICON = {
@@ -651,7 +657,7 @@
     if (level === "on") {
       return {
         bg: `radial-gradient(circle at 50% 50%, ${mix(color, 55, "#fff")}, ${color} 55%, ${mix(color, 75, "#000")} 100%)`,
-        sh: `0 0 8px ${mix(color, 80)}, 0 0 22px ${mix(color, 40)}, 0 0 48px ${mix(color, 18)}`,
+        sh: `0 0 8px ${mix(color, 60)}, 0 0 22px ${mix(color, 28)}, 0 0 48px ${mix(color, 12)}`,
       };
     }
     if (level === "dim") {
@@ -679,7 +685,7 @@
       ? "inset 0 0 0 1px rgba(160,182,170,.14), 0 10px 20px -10px rgba(0,0,0,.8)"
       : "inset 0 1px 0 rgba(255,255,255,.07), inset 0 -1px 0 rgba(0,0,0,.5), 0 10px 20px -8px rgba(0,0,0,.8), 0 2px 3px rgba(0,0,0,.6)";
     // ALPHA glow is three widening layers, so the light fades out instead of ending at an edge.
-    const glow = alpha ? `0 0 14px -4px ${mix(color, 55)}, 0 0 34px -6px ${mix(color, 30)}, 0 0 70px -10px ${mix(color, 14)}` : `0 0 36px -2px ${mix(color, 35)}`;
+    const glow = alpha ? `0 0 14px -4px ${mix(color, 40)}, 0 0 34px -6px ${mix(color, 20)}, 0 0 70px -10px ${mix(color, 9)}` : `0 0 36px -2px ${mix(color, 35)}`;
     if (on) shadow += `, inset 0 0 0 1.5px ${mix(color, alpha ? 60 : 70)}, ${glow}, inset 0 0 50px ${mix(color, alpha ? 9 : 7)}`;
     else if (dim) shadow += `, inset 0 0 0 1.5px ${mix(color, 35)}`;
     if (pressed) shadow = "inset 0 3px 10px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.22), 0 2px 4px rgba(0,0,0,.5)" + (on ? `, ${glow}` : "");
@@ -695,7 +701,7 @@
   function inkFor(color, level) {
     // ALPHA lenses glow bright when on, so their glyph turns dark to stay readable.
     if (level === "on") return model.finish === "alpha" ? "#07120C" : "#FFFFFF";
-    return level === "dim" ? mix(color, 80, "#fff") : "#5E646C";
+    return level === "dim" ? mix(color, 80, "#fff") : "var(--off-ink)";
   }
 
   function level(name) {
@@ -788,7 +794,7 @@
           + (active ? `, inset 0 0 30px ${mix(AMB, 6)}` : ""));
         setStyle(s.seg, "transform", pressed ? "translateY(1px)" : "none");
         setStyle(s.text, "color", active ? AMB : isPending ? "#F0CF8A" : "#9AA0A8");
-        setStyle(s.sub, "color", active ? mix(AMB, 70, "#fff") : "#5E646C");
+        setStyle(s.sub, "color", active ? mix(AMB, 70, "#fff") : "var(--off-ink)");
         setStyle(s.bar, "background", active ? AMB : isPending ? mix(AMB, 50) : "#2A2E34");
         setStyle(s.bar, "boxShadow", active ? `0 0 10px ${AMB}` : "none");
       }
@@ -971,7 +977,7 @@
     const needle = h("div", { style: "position:absolute;left:50%;top:50%;width:3px;height:42px;margin-left:-1.5px;background:linear-gradient(180deg,#FF6A5A,#E2463C 70%,#B22E25);border-radius:2px 2px 1px 1px;transform-origin:50% 100%;transition:transform .6s cubic-bezier(.4,0,.2,1);box-shadow:0 0 6px rgba(226,70,60,.5)" });
     face.append(needle,
       h("div", { style: "position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--metal);box-shadow:0 2px 4px rgba(0,0,0,.8)" }),
-      h("div", { style: "position:absolute;left:0;right:0;bottom:9px;text-align:center;font-size:8px;font-weight:700;letter-spacing:.2em;color:#8B9199" }, "PSI"),
+      h("div", { style: "position:absolute;left:0;right:0;bottom:9px;text-align:center;font-size:8px;font-weight:700;letter-spacing:.2em;color:var(--muted)" }, "PSI"),
       h("div", { style: "position:absolute;left:10%;right:10%;top:2%;height:38%;border-radius:50%;background:radial-gradient(ellipse at 50% 0%,rgba(255,255,255,.14),transparent 70%);pointer-events:none" }));
     const digits = h("div", { style: "padding:3px 6px;border-radius:4px;background:#0A0B0D;box-shadow:inset 0 1px 3px rgba(0,0,0,.9),0 0 0 1px #2A2E34;font-family:ui-monospace,Menlo,monospace;font-size:14px;font-weight:600;text-align:center" });
     const lamp = smallLamp(20);
@@ -986,7 +992,7 @@
       setText(digits, indicator ? `${Math.round(value)} psi` : "--- psi");
       setStyle(digits, "color", emergency ? RED : warning ? AMB : "#E6E8EA");
       applyLens(lamp.lens, emergency ? RED : AMB, emergency ? (model.phase ? "on" : "dim") : warning ? "on" : "off");
-      setStyle(lampText, "color", emergency ? RED : warning ? AMB : "#5E646C");
+      setStyle(lampText, "color", emergency ? RED : warning ? AMB : "var(--off-ink)");
       setText(state, !indicator ? "—" : emergency ? "EMERGENCY" : warning ? "WARNING" : "NORMAL");
       setStyle(state, "color", emergency ? RED : warning ? AMB : GRN);
     });
@@ -1021,7 +1027,7 @@
       h("div", { style: "width:100%;height:100%;border-radius:50%;background:radial-gradient(circle,#0a0a09,#23221f);box-shadow:inset 0 4px 10px rgba(0,0,0,.95);display:flex;align-items:center;justify-content:center" }, button));
     tile.append(bezel, h("div", { style: "display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0" },
       h("div", { style: "font-size:17px;font-weight:600;letter-spacing:.06em;color:var(--legend)" }, "ACTIVATE"),
-      h("div", { style: "font-size:11px;font-weight:600;letter-spacing:.04em;color:#6B717A;line-height:1.3;text-align:center" }, "GATES · FUEL", h("br"), "SCALES · CARGO")));
+      h("div", { style: "font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--faint);line-height:1.3;text-align:center" }, "GATES · FUEL", h("br"), "SCALES · CARGO")));
     updaters.push(() => {
       const pressed = model.pressed.has(ctl), flash = model.activateFlash;
       applyTile(tile, bar, AMB, flash ? "on" : "off", pressed);
@@ -1228,7 +1234,7 @@
       applyLens(lamp.lens, AMB, low ? (model.phase ? "on" : "dim") : "off");
     });
     const body = h("div", { class: "fuel-body" },
-      h("div", {}, h("div", { class: "fuel-cap" }, "RANGE"), h("div", {}, range, h("span", { class: "fuel-unit", style: "color:#8B9199" }, "MI"))),
+      h("div", {}, h("div", { class: "fuel-cap" }, "RANGE"), h("div", {}, range, h("span", { class: "fuel-unit", style: "color:var(--muted)" }, "MI"))),
       h("div", {}, h("div", { class: "fuel-track" }, fill, ...ticks),
         h("div", { class: "fuel-scale" }, h("span", {}, "E"), h("span", {}, "¼"), h("span", {}, "½"), h("span", {}, "¾"), h("span", {}, "F"))),
       h("div", {}, h("div", { class: "fuel-cap" }, "TANK"), tank, h("div", { class: "fuel-cap" }, "AVG"), avg));
