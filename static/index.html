@@ -10,6 +10,9 @@
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="icon" href="/static/icon-192.png">
 <title>Cab Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
 <style>
   /* Design: Cab Deck v6 "Peterbilt x Audi". Designed at 1194x834; scaled to the screen height
      and stretched in width (or the other way round) so any aspect ratio is filled edge to edge. */
@@ -34,6 +37,13 @@
 
   /* Console finishes (v7): dark green in the truck's colour, walnut, or the original v6 graphite.
      Only surfaces and legend colour change; layout, sizes and states stay the same. */
+  :root {
+    /* "on" colour of lamps and keys, and the chrome of rings and bezels */
+    --ok: #4FD37A;
+    --ok-lit: #86F2AA;
+    --metal: linear-gradient(160deg, #f2f1ec, #8f8a80 40%, #2e2c29 60%, #c9c5bc);
+    --ring: linear-gradient(160deg, #e6e3dc, #5a574f 50%, #2e2c29 60%, #b5b0a6);
+  }
   :root, [data-finish="graphite"] {
     --panel-bg: radial-gradient(ellipse at 50% 0%, #15181C, #0E1013 60%, #0B0C0F);
     --console: #15171A;
@@ -58,6 +68,56 @@
     --legend: #F0E2C8;
     --track: linear-gradient(180deg, #120B07, #1C120B);
   }
+
+  /* ALPHA (Oct 11, 2026): the Alpha Gen dash look on the button panel. Deep brand green, thin
+     satin outlines instead of metal rims, no painted reflections, mint light with a soft
+     layered glow (the CSS stand-in for the dash's bloom), Saira Semi Condensed type. */
+  [data-finish="alpha"] {
+    --panel-bg: radial-gradient(ellipse at 50% 15%, #12291F, #0A1B14 55%, #070C09);
+    --console: radial-gradient(ellipse at 50% 0%, rgba(21,49,38,.55), transparent 70%), linear-gradient(180deg, #0D1F17, #08120D);
+    --key: linear-gradient(180deg, #15281F, #0E1B15);
+    --key-pressed: linear-gradient(180deg, #0A1510, #12241B);
+    --legend: #E4DCC4;
+    --track: linear-gradient(180deg, #040906, #0A140F);
+    --ok: #7BEFB5;
+    --ok-lit: #B8F9D6;
+    --metal: linear-gradient(160deg, #6F7F78, #26332D 45%, #121B17 60%, #4A5A53);
+    --ring: linear-gradient(160deg, rgba(160,178,168,.55), rgba(60,75,68,.5));
+  }
+  [data-finish="alpha"] body { font-family: "Saira Semi Condensed", "SF Pro Display", -apple-system, "Segoe UI", Arial, sans-serif; background: #050806; }
+  [data-finish="alpha"] #stage { background: #050806; }
+  [data-finish="alpha"] .zone {
+    padding: 1px; border-radius: 16px;
+    background: linear-gradient(180deg, rgba(160,182,170,.34), rgba(160,182,170,.1));
+    box-shadow: 0 16px 30px -14px rgba(0,0,0,.9);
+  }
+  [data-finish="alpha"] .zone-in { border-radius: 15px; box-shadow: inset 0 1px 0 rgba(255,255,255,.035); }
+  [data-finish="alpha"] .zone-title { padding: 3px 2px; background: none; box-shadow: none; color: rgba(228,220,196,.55); font-size: 12px; letter-spacing: .32em; }
+  [data-finish="alpha"] .plate-rim { padding: 1px; background: linear-gradient(180deg, rgba(160,182,170,.4), rgba(160,182,170,.12)); box-shadow: 0 8px 18px -8px rgba(0,0,0,.9); }
+  [data-finish="alpha"] .plate { background: linear-gradient(180deg, #11231B, #0A1611); box-shadow: none; }
+  [data-finish="alpha"] .plate-label { color: rgba(228,220,196,.55); text-shadow: none; }
+  [data-finish="alpha"] .plate-value { color: var(--legend); }
+  [data-finish="alpha"] .plate-sep { background: linear-gradient(180deg, transparent, rgba(160,182,170,.3), transparent); }
+  [data-finish="alpha"] .knob { background: linear-gradient(180deg, #1E3229, #12201A); box-shadow: inset 0 0 0 1px rgba(160,182,170,.3); }
+  [data-finish="alpha"] .knob svg { stroke: rgba(228,220,196,.7); }
+  [data-finish="alpha"] .knob.on { background: var(--ok); box-shadow: 0 0 10px color-mix(in oklab, var(--ok) 60%, transparent), 0 0 26px color-mix(in oklab, var(--ok) 25%, transparent); }
+  [data-finish="alpha"] .knob.on svg { stroke: #07120C; }
+  [data-finish="alpha"] .glare, [data-finish="alpha"] .clock-glare { display: none; }
+  [data-finish="alpha"] .well { background: linear-gradient(180deg, #08130E, #0C1913); }
+  [data-finish="alpha"] .segs { background: linear-gradient(180deg, rgba(160,182,170,.3), rgba(160,182,170,.12)); box-shadow: 0 3px 6px rgba(0,0,0,.6); }
+  [data-finish="alpha"] .lever-rail { background: linear-gradient(180deg, #020403, #07100B); }
+  [data-finish="alpha"] .lever-fill { background: linear-gradient(180deg, #B8F9D6, #4FC98E); box-shadow: 0 0 10px rgba(123,239,181,.55), 0 0 26px rgba(123,239,181,.22); }
+  [data-finish="alpha"] .lever-knob { box-shadow: 0 8px 14px rgba(0,0,0,.8); }
+  [data-finish="alpha"] .lever-knob::after {
+    background: radial-gradient(circle at 50% 40%, #1C2E25, #0E1813 70%), linear-gradient(#7BEFB5, #7BEFB5);
+    background-size: 100% 100%, 4px 16px; background-position: center, center; background-repeat: no-repeat;
+    box-shadow: inset 0 0 0 1px rgba(160,182,170,.25), 0 0 8px rgba(123,239,181,.25);
+  }
+  [data-finish="alpha"] .clock-face { background: radial-gradient(circle at 50% 40%, #12241B, #08110C 75%); }
+  [data-finish="alpha"] .clock-tick.major { background: var(--legend); }
+  [data-finish="alpha"] .week-day { background: linear-gradient(180deg, #0B1712, #11221A); }
+  [data-finish="alpha"] .nav-cell { background: rgba(0,0,0,.22); box-shadow: inset 0 0 0 1px rgba(160,182,170,.08); }
+  [data-finish="alpha"] .fuel-cap, [data-finish="alpha"] .nav-sub, [data-finish="alpha"] .clock-note { color: rgba(228,220,196,.5); }
 
   #stage { position: fixed; inset: 0; overflow: hidden; background: #08090B; }
   #panel {
@@ -118,7 +178,7 @@
   .knob.on svg { stroke: #15140F; }
 
   /* Lenses */
-  .ring { flex: none; padding: 2px; border-radius: 50%; background: linear-gradient(160deg, #e6e3dc, #5a574f 50%, #2e2c29 60%, #b5b0a6); }
+  .ring { flex: none; padding: 2px; border-radius: 50%; background: var(--ring); }
   .ring.big { padding: 3px; box-shadow: 0 3px 6px rgba(0,0,0,.6); }
   .lens { position: relative; overflow: hidden; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
   .lens svg { position: relative; }
@@ -179,7 +239,7 @@
   .clock-sep { align-self: stretch; margin: 8px 0; background: linear-gradient(180deg, transparent, rgba(0,0,0,.6), transparent); box-shadow: 1px 0 0 rgba(255,255,255,.05); }
   .clock-col { align-self: start; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .clock-half { display: flex; align-items: center; gap: 14px; min-width: 0; }
-  .clock-bezel { flex: none; width: 132px; height: 132px; padding: 4px; border-radius: 50%; background: linear-gradient(160deg, #f2f1ec, #8f8a80 40%, #2e2c29 60%, #c9c5bc); box-shadow: 0 1px 0 rgba(255,255,255,.1), 0 10px 18px -6px rgba(0,0,0,.9), 0 2px 3px rgba(0,0,0,.6); }
+  .clock-bezel { flex: none; width: 132px; height: 132px; padding: 4px; border-radius: 50%; background: var(--metal); box-shadow: 0 1px 0 rgba(255,255,255,.1), 0 10px 18px -6px rgba(0,0,0,.9), 0 2px 3px rgba(0,0,0,.6); }
   .clock-face { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; background: radial-gradient(circle at 50% 40%, #17181B, #0A0B0D 75%); box-shadow: inset 0 4px 10px rgba(0,0,0,.9), inset 0 0 0 1px #000; }
   .clock-tick { position: absolute; left: 50%; top: 4px; width: 1px; height: 5px; margin-left: -.5px; background: rgba(230,232,234,.45); transform-origin: 50% 58px; }
   .clock-tick.major { width: 3px; height: 10px; margin-left: -1.5px; background: #E6E8EA; }
@@ -187,7 +247,7 @@
   .clock-hand.hour { width: 5px; height: 31px; margin-left: -2.5px; }
   .clock-hand.minute { width: 3px; height: 46px; margin-left: -1.5px; }
   .clock-hand.second { width: 1.5px; height: 50px; margin-left: -.75px; background: #E2463C; }
-  .clock-pin { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: linear-gradient(160deg, #f2f1ec, #8f8a80 40%, #2e2c29 60%, #c9c5bc); box-shadow: 0 2px 4px rgba(0,0,0,.8); }
+  .clock-pin { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--metal); box-shadow: 0 2px 4px rgba(0,0,0,.8); }
   .clock-glare { position: absolute; left: 10%; right: 10%; top: 2%; height: 38%; border-radius: 50%; background: radial-gradient(ellipse at 50% 0%, rgba(255,255,255,.12), transparent 70%); pointer-events: none; }
   .clock-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
   .clock-tag { align-self: flex-start; padding: 2px 8px; border: 1px solid; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: .16em; }
@@ -196,7 +256,7 @@
   .week { display: flex; gap: 4px; padding-bottom: 6px; }
   .week-day { flex: 1; height: 24px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: rgba(228,220,196,.4); background: linear-gradient(180deg, #131518, #1B1E22); box-shadow: inset 0 1px 3px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.04); }
   .week-day { position: relative; }
-  .week-day.due::after { content: ""; position: absolute; left: 3px; right: 3px; bottom: -6px; height: 3px; border-radius: 2px; background: #4FD37A; box-shadow: 0 0 8px rgba(79,211,122,.8); }
+  .week-day.due::after { content: ""; position: absolute; left: 3px; right: 3px; bottom: -6px; height: 3px; border-radius: 2px; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
   .week-day.today { color: #2A1A04; background: radial-gradient(circle at 50% 30%, #FFE3A6, #E8A13A 60%, #9A5F10); box-shadow: 0 0 10px rgba(232,161,58,.7), inset 0 1px 1px rgba(255,255,255,.5); }
   .fuel-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 170px minmax(0, 1fr) 150px; gap: 14px; align-items: center; padding: 0 6px; }
   .fuel-big { font-size: 40px; font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; line-height: 1; }
@@ -312,7 +372,7 @@
     height: 52px;
     margin-left: -26px;
     border-radius: 50%;
-    background: linear-gradient(160deg, #f2f1ec, #8f8a80 40%, #2e2c29 60%, #c9c5bc);
+    background: var(--metal);
     box-shadow: 0 8px 14px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.2);
     display: flex;
     align-items: center;
@@ -419,15 +479,17 @@
   const FS_HIDE_MS = 3000;
   const SWIPE_MIN_PX = 60;
   const MAX_QUEUED_ERRORS = 20;
-  const STORAGE = { sound: "cabDeckSound", bright: "cabDeckBright", finish: "cabDeckFinish", switchStyle: "cabDeckSwitchStyle" };
-  const FINISHES = ["green", "walnut", "graphite"];
+  // finish key bumped with ALPHA so every panel starts on the new default once
+  const STORAGE = { sound: "cabDeckSound", bright: "cabDeckBright", finish: "cabDeckFinish2", switchStyle: "cabDeckSwitchStyle" };
+  const FINISHES = ["alpha", "green", "walnut", "graphite"];
   const SWITCH_STYLES = ["lever", "buttons"];
   const LEVER_PAD = 30; // px from the track edge to the first and last detent
 
   // Vibration patterns in ms. Works on Android browsers; iPad has no vibration hardware.
   const HAPTIC = { tap: 12, hold: 25, button: 12, detent: 10, tick: 6, ui: 6, linkLost: [40, 60, 40] };
 
-  const AMB = "#E8A13A", GRN = "#4FD37A", BLU = "#4C9DF0", RED = "#E2463C", ORG = "#F08A2E", MUTED = "#8B9199";
+  // GRN follows the finish (CSS --ok), so ALPHA turns every "on" green into its mint.
+  const AMB = "#E8A13A", GRN = "var(--ok)", BLU = "#4C9DF0", RED = "#E2463C", ORG = "#F08A2E", MUTED = "#8B9199";
   const SVG_NS = "http://www.w3.org/2000/svg";
 
   const ICON = {
@@ -467,7 +529,7 @@
     activateFlash: false,
     sound: readStored(STORAGE.sound, typeof navigator.vibrate !== "function") === true,
     bright: Number(readStored(STORAGE.bright, 1)) || 1,
-    finish: FINISHES.includes(readStored(STORAGE.finish, "green")) ? readStored(STORAGE.finish, "green") : "green",
+    finish: FINISHES.includes(readStored(STORAGE.finish, "alpha")) ? readStored(STORAGE.finish, "alpha") : "alpha",
     switchStyle: SWITCH_STYLES.includes(readStored(STORAGE.switchStyle, "lever")) ? readStored(STORAGE.switchStyle, "lever") : "lever",
     drag: null,        // { id, frac, position } while a lever is being dragged
     setupOpen: false,
@@ -565,6 +627,7 @@
   }
 
   function lensStyle(color, level) {
+    if (model.finish === "alpha") return alphaLensStyle(color, level);
     if (level === "on") {
       return {
         bg: `radial-gradient(circle at 35% 30%, #fff8e6, ${color} 45%, ${mix(color, 55, "#000")} 100%)`,
@@ -583,6 +646,26 @@
     };
   }
 
+  // ALPHA: a flat emissive disc with a wide layered glow, no painted bulb or reflection.
+  function alphaLensStyle(color, level) {
+    if (level === "on") {
+      return {
+        bg: `radial-gradient(circle at 50% 50%, ${mix(color, 55, "#fff")}, ${color} 55%, ${mix(color, 75, "#000")} 100%)`,
+        sh: `0 0 8px ${mix(color, 80)}, 0 0 22px ${mix(color, 40)}, 0 0 48px ${mix(color, 18)}`,
+      };
+    }
+    if (level === "dim") {
+      return {
+        bg: `radial-gradient(circle, ${mix(color, 45, "#0b1611")}, ${mix(color, 25, "#07100b")} 80%)`,
+        sh: `0 0 10px ${mix(color, 22)}`,
+      };
+    }
+    return {
+      bg: "radial-gradient(circle at 50% 45%, #13241C, #0A140F 75%)",
+      sh: "inset 0 0 0 1px rgba(160,182,170,.12)",
+    };
+  }
+
   function applyLens(lens, color, level) {
     const style = lensStyle(color, level);
     setStyle(lens, "background", style.bg);
@@ -591,10 +674,15 @@
 
   function applyTile(tile, bar, color, level, pressed) {
     const on = level === "on", dim = level === "dim";
-    let shadow = "inset 0 1px 0 rgba(255,255,255,.07), inset 0 -1px 0 rgba(0,0,0,.5), 0 10px 20px -8px rgba(0,0,0,.8), 0 2px 3px rgba(0,0,0,.6)";
-    if (on) shadow += `, inset 0 0 0 1.5px ${mix(color, 70)}, 0 0 36px -2px ${mix(color, 35)}, inset 0 0 50px ${mix(color, 7)}`;
+    const alpha = model.finish === "alpha";
+    let shadow = alpha
+      ? "inset 0 0 0 1px rgba(160,182,170,.14), 0 10px 20px -10px rgba(0,0,0,.8)"
+      : "inset 0 1px 0 rgba(255,255,255,.07), inset 0 -1px 0 rgba(0,0,0,.5), 0 10px 20px -8px rgba(0,0,0,.8), 0 2px 3px rgba(0,0,0,.6)";
+    // ALPHA glow is three widening layers, so the light fades out instead of ending at an edge.
+    const glow = alpha ? `0 0 14px -4px ${mix(color, 55)}, 0 0 34px -6px ${mix(color, 30)}, 0 0 70px -10px ${mix(color, 14)}` : `0 0 36px -2px ${mix(color, 35)}`;
+    if (on) shadow += `, inset 0 0 0 1.5px ${mix(color, alpha ? 60 : 70)}, ${glow}, inset 0 0 50px ${mix(color, alpha ? 9 : 7)}`;
     else if (dim) shadow += `, inset 0 0 0 1.5px ${mix(color, 35)}`;
-    if (pressed) shadow = "inset 0 3px 10px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.22), 0 2px 4px rgba(0,0,0,.5)" + (on ? `, 0 0 36px -2px ${mix(color, 35)}` : "");
+    if (pressed) shadow = "inset 0 3px 10px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.22), 0 2px 4px rgba(0,0,0,.5)" + (on ? `, ${glow}` : "");
     setStyle(tile, "background", pressed ? "var(--key-pressed)" : "var(--key)");
     setStyle(tile, "boxShadow", shadow);
     setStyle(tile, "transform", pressed ? "perspective(600px) rotateX(7deg) scale(.985)" : "none");
@@ -605,7 +693,9 @@
   }
 
   function inkFor(color, level) {
-    return level === "on" ? "#FFFFFF" : level === "dim" ? mix(color, 80, "#fff") : "#5E646C";
+    // ALPHA lenses glow bright when on, so their glyph turns dark to stay readable.
+    if (level === "on") return model.finish === "alpha" ? "#07120C" : "#FFFFFF";
+    return level === "dim" ? mix(color, 80, "#fff") : "#5E646C";
   }
 
   function level(name) {
@@ -632,7 +722,7 @@
       const lvl = spec.level ? spec.level() : level(spec.indicator);
       applyTile(tile, bar, spec.color, lvl, model.pressed.has(spec.ctl));
       applyLens(lens.lens, spec.color, lvl);
-      setAttr(lens.glyph, "stroke", inkFor(spec.color, lvl));
+      setStyle(lens.glyph, "stroke", inkFor(spec.color, lvl));
       setText(state, lvl === "on" ? spec.onText : lvl === "dim" ? (spec.dimText || "DIM") : spec.offText);
       setStyle(state, "color", lvl === "off" ? MUTED : spec.color);
       if (lens.spin) lens.spin.classList.toggle("on", lvl === "on");
@@ -651,8 +741,8 @@
   function blinkerTile(ctl, label, path, indicator, side) {
     // Compact blinker in the top row, arrow on the outer side.
     const { tile, bar } = tileNode(ctl, "tap", `blinker ${side}`);
-    const lit = h("svg", { viewBox: "0 0 84 64", style: "position:absolute;inset:0;width:100%;height:100%;transition:opacity .06s;filter:drop-shadow(0 0 10px #4FD37A)" },
-      h("path", { d: path, fill: "#86F2AA" }));
+    const lit = h("svg", { viewBox: "0 0 84 64", style: "position:absolute;inset:0;width:100%;height:100%;transition:opacity .06s;filter:drop-shadow(0 0 10px var(--ok))" },
+      h("path", { d: path, style: "fill:var(--ok-lit)" }));
     const art = h("div", { style: "position:relative;width:58px;height:44px;flex:none" },
       h("svg", { viewBox: "0 0 84 64", style: "position:absolute;inset:0;width:100%;height:100%" },
         h("path", { d: path, fill: "#1A2E22", stroke: "#0B140F", "stroke-width": 1 })),
@@ -824,7 +914,7 @@
         h("div", { style: "display:flex;align-items:center;gap:6px" }, ign.ring, ignText),
         h("div", { style: "display:flex;align-items:center;gap:6px" }, run.ring, runText),
         state),
-      h("div", { style: "width:100px;height:100px;padding:5px;border-radius:50%;background:linear-gradient(160deg,#f2f1ec,#8f8a80 40%,#2e2c29 60%,#c9c5bc);box-shadow:0 1px 0 rgba(255,255,255,.1),0 10px 20px -6px rgba(0,0,0,.9),0 2px 3px rgba(0,0,0,.6)" },
+      h("div", { style: "width:100px;height:100px;padding:5px;border-radius:50%;background:var(--metal);box-shadow:0 1px 0 rgba(255,255,255,.1),0 10px 20px -6px rgba(0,0,0,.9),0 2px 3px rgba(0,0,0,.6)" },
         h("div", { style: "width:100%;height:100%;border-radius:50%;background:radial-gradient(circle,#0c0c0b,#262522);box-shadow:inset 0 3px 8px rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center" }, start)));
     updaters.push(() => {
       const lvl = level("engine"), pressed = model.pressed.has("cab_deck_btn_008");
@@ -880,7 +970,7 @@
     }
     const needle = h("div", { style: "position:absolute;left:50%;top:50%;width:3px;height:42px;margin-left:-1.5px;background:linear-gradient(180deg,#FF6A5A,#E2463C 70%,#B22E25);border-radius:2px 2px 1px 1px;transform-origin:50% 100%;transition:transform .6s cubic-bezier(.4,0,.2,1);box-shadow:0 0 6px rgba(226,70,60,.5)" });
     face.append(needle,
-      h("div", { style: "position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:linear-gradient(160deg,#f2f1ec,#8f8a80 40%,#2e2c29 60%,#c9c5bc);box-shadow:0 2px 4px rgba(0,0,0,.8)" }),
+      h("div", { style: "position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--metal);box-shadow:0 2px 4px rgba(0,0,0,.8)" }),
       h("div", { style: "position:absolute;left:0;right:0;bottom:9px;text-align:center;font-size:8px;font-weight:700;letter-spacing:.2em;color:#8B9199" }, "PSI"),
       h("div", { style: "position:absolute;left:10%;right:10%;top:2%;height:38%;border-radius:50%;background:radial-gradient(ellipse at 50% 0%,rgba(255,255,255,.14),transparent 70%);pointer-events:none" }));
     const digits = h("div", { style: "padding:3px 6px;border-radius:4px;background:#0A0B0D;box-shadow:inset 0 1px 3px rgba(0,0,0,.9),0 0 0 1px #2A2E34;font-family:ui-monospace,Menlo,monospace;font-size:14px;font-weight:600;text-align:center" });
@@ -901,7 +991,7 @@
       setStyle(state, "color", emergency ? RED : warning ? AMB : GRN);
     });
     return h("div", { class: "well span", style: "display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:6px;padding:6px" },
-      h("div", { style: "position:relative;width:112px;height:112px;border-radius:50%;padding:4px;background:linear-gradient(160deg,#f2f1ec,#8f8a80 40%,#2e2c29 60%,#c9c5bc);box-shadow:0 1px 0 rgba(255,255,255,.1),0 10px 18px -6px rgba(0,0,0,.9),0 2px 3px rgba(0,0,0,.6)" }, face),
+      h("div", { style: "position:relative;width:112px;height:112px;border-radius:50%;padding:4px;background:var(--metal);box-shadow:0 1px 0 rgba(255,255,255,.1),0 10px 18px -6px rgba(0,0,0,.9),0 2px 3px rgba(0,0,0,.6)" }, face),
       h("div", { style: "display:flex;flex-direction:column;gap:6px;min-width:0" },
         h("div", { style: "font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--legend);line-height:1.05" }, "AIR", h("br"), "PRESSURE"),
         digits,
@@ -927,7 +1017,7 @@
     const button = h("div", { style: "position:relative;overflow:hidden;width:64px;height:64px;border-radius:50%;transition:transform .05s,box-shadow .12s;display:flex;align-items:center;justify-content:center" },
       h("div", { style: "position:absolute;left:14%;right:14%;top:5%;height:42%;border-radius:50%;background:radial-gradient(ellipse at 50% 0%,rgba(255,255,255,.6),transparent 70%)" }),
       icon(ICON.activate, 30, "0 0 24 24", { strokeWidth: 2.6, style: "stroke:#3A2605" }));
-    const bezel = h("div", { style: "flex:none;width:90px;height:90px;padding:6px;border-radius:50%;background:linear-gradient(160deg,#f2f1ec,#8f8a80 40%,#2e2c29 60%,#c9c5bc)" },
+    const bezel = h("div", { style: "flex:none;width:90px;height:90px;padding:6px;border-radius:50%;background:var(--metal)" },
       h("div", { style: "width:100%;height:100%;border-radius:50%;background:radial-gradient(circle,#0a0a09,#23221f);box-shadow:inset 0 4px 10px rgba(0,0,0,.95);display:flex;align-items:center;justify-content:center" }, button));
     tile.append(bezel, h("div", { style: "display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0" },
       h("div", { style: "font-size:17px;font-weight:600;letter-spacing:.06em;color:var(--legend)" }, "ACTIVATE"),
@@ -960,7 +1050,7 @@
       const lvl = level(spec.indicator);
       applyTile(tile, bar, spec.color, lvl, model.pressed.has(spec.ctl));
       applyLens(lens.lens, spec.color, lvl);
-      setAttr(lens.glyph, "stroke", inkFor(spec.color, lvl));
+      setStyle(lens.glyph, "stroke", inkFor(spec.color, lvl));
       setText(state, lvl === "on" ? spec.onText : lvl === "dim" ? "DIM" : "OFF");
       setStyle(state, "color", lvl === "off" ? MUTED : spec.color);
       if (lens.spin) lens.spin.classList.toggle("on", lvl === "on");
