@@ -136,7 +136,8 @@ vec3 field(vec2 q) {
   return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);
 }
 
-vec3 gauge(vec3 col, vec2 p, float side, float v, vec2 warn, float nMaj, float nMin, float nSec, float mark) {
+// boldMin: 0 = fine minor ticks, 1 = few bold ones (the half-way marks on the speedometer)
+vec3 gauge(vec3 col, vec2 p, float side, float v, vec2 warn, float nMaj, float nMin, float nSec, float mark, float boldMin) {
   vec2 q = vec2((p.x - side * GX) * side, p.y);
   vec3 o = field(q);
   float s = o.x, sd = o.y;
@@ -175,9 +176,10 @@ vec3 gauge(vec3 col, vec2 p, float side, float v, vec2 warn, float nMaj, float n
   float dMaj = abs(fract(t * nMaj + .5) - .5) / nMaj * uLT;
   float dMin = abs(fract(t * nMin + .5) - .5) / nMin * uLT;
   float majR = smoothstep(.052 - PX, .052 + PX, sd) * (1. - smoothstep(.078 - PX, .078 + PX, sd));
-  float minR = smoothstep(.052 - PX, .052 + PX, sd) * (1. - smoothstep(.066 - PX, .066 + PX, sd));
+  float minLen = mix(.066, .071, boldMin), minW = mix(.0013, .0026, boldMin);
+  float minR = smoothstep(.052 - PX, .052 + PX, sd) * (1. - smoothstep(minLen - PX, minLen + PX, sd));
   float tick = max((1. - smoothstep(.0028 - PX, .0028 + PX, dMaj)) * majR,
-                   (1. - smoothstep(.0013 - PX, .0013 + PX, dMin)) * minR * .7) * inS;
+                   (1. - smoothstep(minW - PX, minW + PX, dMin)) * minR * mix(.7, .9, boldMin)) * inS;
   paint(col, mix(CREAM, RED, hot) * mix(.45, 1., lit), tick, .18 * lit);
 
   // needle: a short bright blade across the band, pointing inwards
@@ -223,8 +225,9 @@ void main() {
   col *= .94 + .06 * sin(p.y * 900.);
   col += G3 * .5 * exp(-length(p * vec2(.6, 1.)) * 2.5);
 
-  col = gauge(col, p, -1., uBar.x, vec2(-1., 2.), 9., 45., 9., uBar.z);
-  col = gauge(col, p, 1., uBar.y, vec2(-1., .84), 5., 25., 10., -1.);
+  // speedometer: numbers every 10 mph, one bold mark at each 5 between them
+  col = gauge(col, p, -1., uBar.x, vec2(-1., 2.), 9., 18., 9., uBar.z, 1.);
+  col = gauge(col, p, 1., uBar.y, vec2(-1., .84), 5., 25., 10., -1., 0.);
 
   // top bridge between the inner ends of the two gauges
   float bridgeY = uEnds.z - BAND, bridgeX = GX + uEnds.y;
