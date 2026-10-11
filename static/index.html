@@ -13,6 +13,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+<!-- three.js for the 3D toggles; without it the flat SVG toggles stay -->
+<script type="importmap">{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }</script>
 <style>
   /* Design: Cab Deck v6 "Peterbilt x Audi". Designed at 1194x834; scaled to the screen height
      and stretched in width (or the other way round) so any aspect ratio is filled edge to edge. */
@@ -202,13 +207,22 @@
   .spin.on { opacity: .9; animation: beaconSpin 1.1s linear infinite; }
 
   /* Zones */
-  #dash { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; transition: opacity .4s; }
+  #dash { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; transition: opacity .4s; }
+  /* 3D toggles (v9): one transparent three.js canvas over the dash paints every toggle */
+  .tg3d { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; }
+  .tg3d-on .tg-art svg, .tg3d-on .b3d-flat { visibility: hidden; }
+  /* 3D button tiles (v9): the tile is only the touch area. Just the button moves and lights;
+     the tile shows no key, frame or press while three.js paints the button. */
+  .tile.b3d-tile { gap: 6px; padding: 4px; }
+  .tg3d-on .tile.b3d-tile { background: none !important; box-shadow: none !important; transform: none !important; }
+  .tg3d-on .tile.b3d-tile > .bar { visibility: hidden; }
+  .b3d-label { font-size: 13px; font-weight: 700; letter-spacing: .16em; color: var(--legend); line-height: 1; white-space: nowrap; }
   #dash.offline { opacity: .28; pointer-events: none; }
   #panel.setup-open #dash { visibility: hidden; }
   .main-row { flex: 1; min-height: 0; display: grid; grid-template-columns: 336fr 233fr 560fr; gap: 12px; }
   .stack { min-height: 0; display: flex; flex-direction: column; gap: 12px; }
   .stack > .zone:last-child { flex: 1; }
-  .bottom-row { height: 162px; flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .bottom-row { height: 162px; flex: none; display: grid; grid-template-columns: 7fr 3fr; gap: 12px; }
   .zone {
     min-height: 0;
     padding: 3px;
@@ -234,8 +248,7 @@
   .zone-in.cab { grid-template-columns: 1.25fr 1fr 1fr 1fr; grid-template-rows: 24px repeat(2, minmax(0, 1fr)); }
   .zone-in.cab .activate { grid-row: span 2; }
   .cab-row { grid-column: 2 / -1; min-height: 0; display: flex; gap: 12px; }
-  .cab-row > .tile:nth-child(-n+2) { flex: 1.15; }
-  .cab-row > .tile:last-child { flex: .7; }
+  .cab-row > .tile { flex: 1; }
   .tile.compact { gap: 4px; padding: 6px 4px; }
   .desc { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: var(--faint); text-align: center; }
 
@@ -264,7 +277,11 @@
   .week-day { position: relative; }
   .week-day.due::after { content: ""; position: absolute; left: 3px; right: 3px; bottom: -6px; height: 3px; border-radius: 2px; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
   .week-day.today { color: #2A1A04; background: radial-gradient(circle at 50% 30%, #FFE3A6, #E8A13A 60%, #9A5F10); box-shadow: 0 0 10px rgba(232,161,58,.7), inset 0 1px 1px rgba(255,255,255,.5); }
-  .fuel-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 170px minmax(0, 1fr) 150px; gap: 14px; align-items: center; padding: 0 6px; }
+  /* FUEL (v9) in a narrow block: range and tank figures on top, the gauge bar across below */
+  .fuel-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 12px; row-gap: 8px; align-content: center; padding: 0 6px; }
+  .fuel-body .fuel-gauge { grid-column: 1 / -1; }
+  .fuel-side { display: grid; grid-template-columns: auto auto; column-gap: 10px; row-gap: 2px; align-items: baseline; justify-content: end; }
+  .fuel-side .fuel-cap { margin: 0; }
   .fuel-big { font-size: 40px; font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; line-height: 1; }
   .fuel-unit { font-size: 15px; font-weight: 700; letter-spacing: .12em; margin-left: 6px; }
   .fuel-cap { font-size: 12px; font-weight: 700; letter-spacing: .18em; color: var(--muted); margin-bottom: 6px; }
@@ -274,7 +291,27 @@
   .fuel-scale { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; font-weight: 700; letter-spacing: .1em; color: rgba(228,220,196,.55); }
   .fuel-stat { font-size: 15px; font-weight: 600; letter-spacing: .04em; color: var(--legend); font-variant-numeric: tabular-nums; }
   .fuel-stat + .fuel-cap { margin-top: 10px; }
-  .nav-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.1fr 1fr 1fr 1fr 1.25fr; gap: 6px; align-items: stretch; padding: 2px 2px 0; }
+  .nav-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.1fr 1fr 1fr 1fr 2.7fr; gap: 6px; align-items: stretch; padding: 2px 2px 0; }
+  /* PLAN (v9): the job as a Gantt strip of shifts. Block widths follow the miles of each day:
+     done days solid, today a track that fills (tick = where you should be now), later days outlined. */
+  .nav-cell.plan-cell { justify-content: flex-start; gap: 7px; }
+  .plan-head, .plan-foot { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; }
+  .plan-day { font-size: 12px; font-weight: 700; letter-spacing: .16em; color: var(--legend); }
+  .plan-strip, .plan-labels { display: flex; gap: 3px; }
+  .plan-strip { height: 20px; }
+  .plan-seg { position: relative; flex: 1 1 0; min-width: 5px; border-radius: 4px; overflow: hidden; }
+  .plan-seg.past { background: color-mix(in oklab, var(--ok) 42%, transparent); }
+  .plan-seg.today { background: rgba(0,0,0,.4); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ok) 55%, transparent); }
+  .plan-seg.next { background: rgba(255,255,255,.025); box-shadow: inset 0 0 0 1px var(--faint); }
+  .plan-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(180deg, var(--ok-lit), var(--ok)); box-shadow: 0 0 12px color-mix(in oklab, var(--ok) 45%, transparent); transition: width .6s cubic-bezier(.4,0,.2,1); }
+  .plan-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--legend); box-shadow: 0 0 6px rgba(0,0,0,.8); }
+  .plan-seg:not(.today) > * { display: none; }
+  .plan-strip.behind .plan-fill { background: linear-gradient(180deg, #F6C878, #E8A13A); box-shadow: 0 0 12px rgba(232,161,58,.45); }
+  .plan-strip.late .plan-seg.today { box-shadow: inset 0 0 0 1px #E2463C; }
+  .plan-strip.late .plan-fill { background: #E2463C; }
+  .plan-lab { flex: 1 1 0; min-width: 5px; overflow: hidden; white-space: nowrap; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .plan-lab.today { color: var(--legend); }
+  .plan-status { font-size: 15px; font-weight: 700; letter-spacing: .06em; white-space: nowrap; }
   .nav-cell { border-radius: 8px; background: rgba(0,0,0,.28); box-shadow: inset 0 2px 6px rgba(0,0,0,.6); padding: 10px 10px 8px; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
   .nav-val { font-size: 26px; font-weight: 700; letter-spacing: .01em; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; color: #E6E8EA; }
   .nav-val.big { font-size: 34px; }
@@ -397,6 +434,23 @@
   }
   .lever.settled .lever-knob { transition: transform .18s cubic-bezier(.3,1.2,.5,1); }
   .lever.settled .lever-fill { transition: width .18s cubic-bezier(.3,1.2,.5,1); }
+  /* Toggle switches (v8): Peterbilt bat-handle toggles, up is on. No key or frame, just the
+     toggle on the panel, its name under it and an indicator lamp beside it. The lever is drawn
+     as a real 3D lever in perspective (see toggleArt) and springs between its two stops. */
+  .tg-row { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .tg-row.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; }
+  .tg { position: relative; min-height: 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  .tg > * { pointer-events: none; }
+  .tg-art { position: relative; display: flex; align-items: center; }
+  .tg-art svg { width: 76px; height: 84px; overflow: visible; }
+  .tg-lamp {
+    position: absolute; left: 100%; top: 50%; width: 11px; height: 11px; margin: -6px 0 0 2px; border-radius: 50%;
+    background: radial-gradient(circle, #16241D, #0A120E); box-shadow: inset 0 0 0 1px rgba(160,182,170,.2);
+    transition: background .1s, box-shadow .1s, opacity .1s;
+  }
+  .tg.up .tg-lamp { background: radial-gradient(circle, var(--ok-lit), var(--ok) 70%); box-shadow: 0 0 8px var(--ok), 0 0 20px color-mix(in oklab, var(--ok) 35%, transparent); }
+  .tg.pending .tg-lamp { opacity: .55; }
+  .tg-label { font-size: 13px; font-weight: 700; letter-spacing: .16em; color: var(--legend); line-height: 1; }
   .seg-bar { position: absolute; left: 16px; right: 16px; top: 7px; height: 4px; border-radius: 2px; }
   .seg-label { font-weight: 600; letter-spacing: .06em; }
   .seg-sub { font-size: 13px; font-weight: 600; letter-spacing: .1em; }
@@ -492,7 +546,7 @@
   const LEVER_PAD = 30; // px from the track edge to the first and last detent
 
   // Vibration patterns in ms. Works on Android browsers; iPad has no vibration hardware.
-  const HAPTIC = { tap: 12, hold: 25, button: 12, detent: 10, tick: 6, ui: 6, linkLost: [40, 60, 40] };
+  const HAPTIC = { tap: 12, hold: 25, button: 12, detent: 10, toggle: 18, tick: 6, ui: 6, linkLost: [40, 60, 40] };
 
   // GRN follows the finish (CSS --ok), so ALPHA turns every "on" green into its mint.
   const AMB = "#E8A13A", GRN = "var(--ok)", BLU = "#4C9DF0", RED = "#E2463C", ORG = "#F08A2E", MUTED = "var(--muted)";
@@ -719,19 +773,23 @@
     return { tile, bar };
   }
 
-  function lensTile(spec) {
-    const { tile, bar } = tileNode(spec.ctl, "tap", spec.tall ? "tall" : "");
-    const lens = lensNode(spec.tall ? 64 : 48, { big: true, icon: spec.icon, spin: spec.spin });
-    const state = h("div", { class: "st" });
-    tile.append(lens.ring, h("div", { class: "lbl" }, spec.l1, spec.l2 ? h("br") : null, spec.l2 || ""), state);
+  // A lit 3D push button with its name under it; the whole tile is its touch area.
+  // spec: { ctl, kind, label, color, icon, iconBox (64 or 24), size, span, tall, indicator | level() }
+  function buttonTile(spec) {
+    const cls = ["b3d-tile", spec.span && "span", spec.tall && "tall"].filter(Boolean).join(" ");
+    const { tile, bar } = tileNode(spec.ctl, spec.kind || "tap", cls);
+    const size = spec.size || 70, box = spec.iconBox || 64;
+    const lens = lensNode(size, { big: true });
+    const glyph = icon(spec.icon, Math.round(size * .56), `0 0 ${box} ${box}`, { strokeWidth: box === 24 ? 2.4 : 3.8 });
+    lens.lens.prepend(glyph);
+    const button3d = addButton3d(lens.ring, { path: spec.icon, box });
+    tile.append(lens.ring, h("div", { class: "b3d-label" }, spec.label));
     updaters.push(() => {
       const lvl = spec.level ? spec.level() : level(spec.indicator);
-      applyTile(tile, bar, spec.color, lvl, model.pressed.has(spec.ctl));
+      applyTile(tile, bar, spec.color, lvl, false);
       applyLens(lens.lens, spec.color, lvl);
-      setStyle(lens.glyph, "stroke", inkFor(spec.color, lvl));
-      setText(state, lvl === "on" ? spec.onText : lvl === "dim" ? (spec.dimText || "DIM") : spec.offText);
-      setStyle(state, "color", lvl === "off" ? MUTED : spec.color);
-      if (lens.spin) lens.spin.classList.toggle("on", lvl === "on");
+      setStyle(glyph, "stroke", inkFor(spec.color, lvl));
+      button3d.set(spec.color, lvl, model.pressed.has(spec.ctl));
     });
     return tile;
   }
@@ -852,6 +910,155 @@
     return lever;
   }
 
+  // Bat-handle toggle (v8). It acts on a multi-position switch: data-pos always holds the
+  // position a tap moves to, so the server still sees one switch and the usual "set".
+  const TOGGLE = {
+    tilt: 28 * Math.PI / 180,  // lever angle from the panel normal at each stop
+    length: 44,                // lever length, SVG units (the nut is 34 across)
+    camera: 210,               // eye distance for the perspective
+    stiffness: 2600, damping: 46, // spring: snaps in ~80 ms with a small bounce
+  };
+
+  // 3D lever in perspective: it sticks out of the nut towards you, tilted up or down.
+  function toggleArt() {
+    const NS = SVG_NS;
+    const el = (tag, attrs) => {
+      const node = document.createElementNS(NS, tag);
+      for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+      return node;
+    };
+    const svg = el("svg", { viewBox: "-38 -42 76 84" });
+    const id = `tg${Math.random().toString(36).slice(2, 8)}`;
+    const defs = el("defs", {});
+    defs.innerHTML = `
+      <linearGradient id="${id}n" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8E9893"/><stop offset=".45" stop-color="#3A433F"/><stop offset=".55" stop-color="#252C29"/><stop offset="1" stop-color="#5E6863"/></linearGradient>
+      <linearGradient id="${id}s" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4C5450"/><stop offset=".42" stop-color="#D3D9D5"/><stop offset=".6" stop-color="#858C88"/><stop offset="1" stop-color="#2E3431"/></linearGradient>
+      <radialGradient id="${id}t" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#E8ECE9"/><stop offset=".35" stop-color="#A9B1AC"/><stop offset=".8" stop-color="#4E5652"/><stop offset="1" stop-color="#2A302D"/></radialGradient>
+      <filter id="${id}b" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4"/></filter>`;
+    const hex = Array.from({ length: 6 }, (_, i) => {
+      const a = Math.PI / 6 + i * Math.PI / 3;
+      return `${(17 * Math.cos(a)).toFixed(2)},${(17 * Math.sin(a)).toFixed(2)}`;
+    }).join(" ");
+    const shadow = el("ellipse", { rx: 9, ry: 6, fill: "rgba(0,0,0,.55)", filter: `url(#${id}b)` });
+    const shaft = el("polygon", { fill: `url(#${id}s)` });
+    const tip = el("ellipse", { fill: `url(#${id}t)`, stroke: "rgba(0,0,0,.45)", "stroke-width": .6 });
+    svg.append(defs,
+      el("polygon", { points: hex, fill: `url(#${id}n)`, stroke: "rgba(0,0,0,.6)", "stroke-width": 1 }),
+      el("circle", { r: 9.5, fill: "#151918", stroke: "rgba(255,255,255,.12)", "stroke-width": .8 }),
+      shadow, shaft, tip);
+
+    const { length: L, camera: D } = TOGGLE;
+    const project = (y, z) => { const k = D / (D - z); return { y: y * k, k }; };
+    // angle > 0 tips the lever up. Shaft and tip sizes grow as they come closer to you.
+    const draw = (angle) => {
+      const dy = -Math.sin(angle), dz = Math.cos(angle);
+      const end = project(L * dy, L * dz), neck = project(L * .72 * dy, L * .72 * dz);
+      const rb = 3.6, rn = 2.8 * neck.k;
+      shaft.setAttribute("points", `${-rb},0 ${rb},0 ${rn},${neck.y.toFixed(2)} ${-rn},${neck.y.toFixed(2)}`);
+      tip.setAttribute("cx", 0);
+      tip.setAttribute("cy", end.y.toFixed(2));
+      tip.setAttribute("rx", (6.4 * end.k).toFixed(2));
+      tip.setAttribute("ry", (6.4 * end.k * (.82 + .18 * Math.abs(dy))).toFixed(2));
+      // light from above: the shadow falls below the lever, further the higher it stands off the panel
+      shadow.setAttribute("cy", (end.y * .55 + L * dz * .32).toFixed(2));
+      shadow.setAttribute("rx", (7 + 3 * dz).toFixed(2));
+    };
+    return { svg, draw };
+  }
+
+  // 3D push button (v9): a lit translucent cap in a gunmetal bezel, painted by the three.js module
+  // over `box`. The box keeps its flat look as a fallback until three.js loads.
+  function addButton3d(box, glyph) {
+    box.classList.add("b3d-flat");
+    const entry = { box, glyph, color: "#888", level: "off", pressed: false };
+    (window.cabDeckButtons ||= []).push(entry);
+    return {
+      set(color, lvl, pressed) {
+        if (entry.color === color && entry.level === lvl && entry.pressed === pressed) return;
+        Object.assign(entry, { color, level: lvl, pressed });
+        if (window.toggle3d) window.toggle3d.invalidate();
+      },
+    };
+  }
+
+  // Toggle node: flat SVG lever (painted over in 3D when three.js loads), lamp and name.
+  // show(up, pending) springs the lever to its new stop.
+  function toggleNode(attrs, label) {
+    const flat = toggleArt();
+    const art = { draw: (angle) => { flat.draw(angle); if (window.toggle3d) window.toggle3d.invalidate(); } };
+    const node = h("div", { class: "tg", ...attrs },
+      h("div", { class: "tg-art" }, flat.svg, h("div", { class: "tg-lamp" })), h("div", { class: "tg-label" }, label));
+    const motion = { angle: -TOGGLE.tilt, speed: 0, target: -TOGGLE.tilt, running: false, ready: false };
+    (window.cabDeckToggles ||= []).push({ box: flat.svg, motion });
+    art.draw(motion.angle);
+    let last = 0;
+    const step = (now) => {
+      const dt = Math.min(.03, last ? (now - last) / 1000 : .016);
+      last = now;
+      const force = (motion.target - motion.angle) * TOGGLE.stiffness - motion.speed * TOGGLE.damping;
+      motion.speed += force * dt;
+      motion.angle += motion.speed * dt;
+      // a real toggle cannot pass its stop, so the bounce happens back from it
+      const limit = TOGGLE.tilt * 1.04;
+      if (Math.abs(motion.angle) > limit) { motion.angle = Math.sign(motion.angle) * limit; motion.speed *= -.35; }
+      if (Math.abs(motion.target - motion.angle) < .002 && Math.abs(motion.speed) < .05) {
+        motion.angle = motion.target;
+        motion.running = false;
+        last = 0;
+        art.draw(motion.angle);
+        return;
+      }
+      art.draw(motion.angle);
+      requestAnimationFrame(step);
+    };
+    const show = (up, pending) => {
+      node.classList.toggle("up", up);
+      node.classList.toggle("pending", pending);
+      const target = up ? TOGGLE.tilt : -TOGGLE.tilt;
+      if (!motion.ready) {
+        // first paint: no animation, just show where the switch is
+        motion.ready = true;
+        motion.angle = motion.target = target;
+        art.draw(target);
+      } else if (target !== motion.target) {
+        motion.target = target;
+        if (!motion.running) { motion.running = true; requestAnimationFrame(step); }
+      }
+    };
+    return { node, show };
+  }
+
+  function toggleSwitch(spec) {
+    // spec: { id, key, label, current, isUp(position), flipTo(position) }
+    const t = toggleNode({ "data-switch": spec.id, "data-pos": "0", "data-key": spec.key }, spec.label);
+    updaters.push(() => {
+      const pending = model.pending[spec.id];
+      const shown = pending !== undefined ? pending : spec.current();
+      t.node.dataset.pos = String(spec.flipTo(Math.max(0, shown)));
+      t.show(shown >= 0 && spec.isUp(shown), pending !== undefined);
+    });
+    return t.node;
+  }
+
+  // A toggle for an on/off tap control (high beam): a flip sends one tap, and the lever shows
+  // the game's state. It flips at once and waits up to TAP_FLIP_MS for the game to agree.
+  const TAP_FLIP_MS = 1500;
+  function tapToggle(spec) {
+    // spec: { ctl, label, indicator }
+    const t = toggleNode({ "data-ctl": spec.ctl, "data-kind": "tap" }, spec.label);
+    let flip = null;   // { up, until, from }
+    t.node.onPress = () => {
+      const now = level(spec.indicator) === "on";
+      flip = { up: !(flip ? flip.up : now), until: performance.now() + TAP_FLIP_MS, from: now };
+    };
+    updaters.push(() => {
+      const now = level(spec.indicator) === "on";
+      if (flip && (now !== flip.from || performance.now() > flip.until)) flip = null;
+      t.show(flip ? flip.up : now, Boolean(flip));
+    });
+    return t.node;
+  }
+
   function switchControl(spec) {
     return h("div", { class: "switch-wrap" }, segmentedSwitch(spec), leverSwitch(spec));
   }
@@ -879,7 +1086,13 @@
     const lights = h("div", { class: "well span" },
       h("div", { style: "display:flex;align-items:center;justify-content:space-between;padding:0 8px;height:22px" },
         h("div", { style: "font-size:18px;font-weight:600;letter-spacing:.08em;color:var(--legend)" }, "LIGHTS"), status),
-      switchControl({ id: "lights", labels: ["OFF", "PARK", "LOW"], subs: ["", "MARKER", "BEAM"], size: 20, current: () => switchPosition("lights") }));
+      // Lights switch positions: 0 off, 1 parking, 2 low beam. Low beam includes the parking lights.
+      h("div", { class: "tg-row c3" },
+        toggleSwitch({ id: "lights", key: "lights:park", label: "PARK", current: () => switchPosition("lights"),
+          isUp: (p) => p >= 1, flipTo: (p) => (p >= 1 ? 0 : 1) }),
+        toggleSwitch({ id: "lights", key: "lights:low", label: "LOW BEAM", current: () => switchPosition("lights"),
+          isUp: (p) => p === 2, flipTo: (p) => (p === 2 ? 1 : 2) }),
+        tapToggle({ ctl: "cab_deck_btn_002", label: "HIGH BEAM", indicator: "high_beam" })));
     const wipersStatus = h("div", { style: "font-size:14px;font-weight:600;letter-spacing:.06em" });
     const wipersLamp = smallLamp(16);
     const wipersState = switchStatus("wipers", "SPEED");
@@ -897,8 +1110,7 @@
     return zone("LIGHTS & SIGNALS", "",
       lights,
       wipers,
-      lensTile({ ctl: "cab_deck_btn_002", l1: "HIGH", l2: "BEAM", color: BLU, indicator: "high_beam", icon: ICON.highBeam, onText: "ON", offText: "OFF" }),
-      lensTile({ ctl: "cab_deck_btn_005", l1: "HAZARD", color: RED, indicator: "hazards", icon: ICON.hazard, onText: "ON", dimText: "ON", offText: "OFF" }));
+      buttonTile({ ctl: "cab_deck_btn_005", label: "HAZARD", color: RED, indicator: "hazards", icon: ICON.hazard, size: 92, span: true }));
   }
 
   function smallLamp(size) {
@@ -906,60 +1118,48 @@
   }
 
   function engineTile() {
-    const { tile, bar } = tileNode("cab_deck_btn_008", "button", "span",
-      "display:grid;grid-template-columns:minmax(0,1fr) 100px;align-items:center;padding:0 8px;gap:4px");
-    const ign = smallLamp(20), run = smallLamp(20);
-    const ignText = h("div", { class: "st" }, "IGNITION"), runText = h("div", { class: "st" }, "RUNNING");
-    const state = h("div", { class: "st" });
-    const start = h("div", { style: "width:78px;height:78px;border-radius:50%;background:radial-gradient(circle at 40% 32%,#3A3D43,#1C1E22 65%,#101114);transition:transform .05s,box-shadow .05s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:#E3E6EA" },
-      h("div", { style: "font-size:14px;font-weight:700;letter-spacing:.12em" }, "START"),
-      h("div", { style: "font-size:14px;font-weight:700;letter-spacing:.12em" }, "STOP"));
-    tile.append(
-      h("div", { style: "display:flex;flex-direction:column;gap:9px;align-items:flex-start" },
-        h("div", { class: "lbl", style: "letter-spacing:.08em" }, "ENGINE"),
-        h("div", { style: "display:flex;align-items:center;gap:6px" }, ign.ring, ignText),
-        h("div", { style: "display:flex;align-items:center;gap:6px" }, run.ring, runText),
-        state),
-      h("div", { style: "width:100px;height:100px;padding:5px;border-radius:50%;background:var(--metal);box-shadow:0 1px 0 rgba(255,255,255,.1),0 10px 20px -6px rgba(0,0,0,.9),0 2px 3px rgba(0,0,0,.6)" },
-        h("div", { style: "width:100%;height:100%;border-radius:50%;background:radial-gradient(circle,#0c0c0b,#262522);box-shadow:inset 0 3px 8px rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center" }, start)));
+    // One START/STOP button: dark when off, amber with ignition, green while the engine runs.
+    const { tile, bar } = tileNode("cab_deck_btn_008", "button", "span b3d-tile");
+    const start = h("div", { style: "width:80px;height:80px;border-radius:50%;background:radial-gradient(circle at 40% 32%,#3A3D43,#1C1E22 65%,#101114);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:#E3E6EA" },
+      h("div", { style: "font-size:15px;font-weight:700;letter-spacing:.12em" }, "START"),
+      h("div", { style: "font-size:15px;font-weight:700;letter-spacing:.12em" }, "STOP"));
+    const button = h("div", { style: "flex:none;width:104px;height:104px;padding:12px;box-sizing:border-box;border-radius:50%;background:var(--metal);box-shadow:0 10px 20px -6px rgba(0,0,0,.9)" }, start);
+    const button3d = addButton3d(button, { text: ["START", "STOP"] });
+    tile.append(button, h("div", { class: "b3d-label" }, "ENGINE"));
     updaters.push(() => {
       const lvl = level("engine"), pressed = model.pressed.has("cab_deck_btn_008");
-      applyTile(tile, bar, lvl === "on" ? GRN : AMB, lvl, pressed);
-      applyLens(ign.lens, AMB, lvl === "dim" ? "on" : "off");
-      applyLens(run.lens, GRN, lvl === "on" ? "on" : "off");
-      setStyle(ignText, "color", lvl === "dim" ? AMB : MUTED);
-      setStyle(runText, "color", lvl === "on" ? GRN : MUTED);
-      setText(state, lvl === "on" ? "RUNNING" : lvl === "dim" ? "IGNITION" : "OFF");
-      setStyle(state, "color", lvl === "on" ? GRN : lvl === "dim" ? AMB : MUTED);
+      const color = lvl === "on" ? GRN : AMB;
+      applyTile(tile, bar, color, lvl, false);
+      button3d.set(color, lvl === "off" ? "off" : "on", pressed);
       setStyle(start, "transform", pressed ? "translateY(3px)" : "none");
-      setStyle(start, "boxShadow", pressed ? "inset 0 3px 8px rgba(0,0,0,.8), 0 0 0 2px rgba(255,255,255,.22)" : "0 4px 0 #050505, 0 6px 8px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.1)");
     });
     return tile;
   }
 
   function pullKnobTile(spec) {
-    // Park brake (yellow diamond) and trailer air (red octagon) push-pull knobs.
-    const { tile, bar } = tileNode(spec.ctl, "tap", "", "justify-content:space-between;padding:8px 4px");
-    const lamp = smallLamp(20);
-    const knob = h("div", { style: "position:relative;width:68px;height:68px;transition:transform .18s cubic-bezier(.3,1.3,.5,1)" },
-      spec.shape,
+    // Park brake (yellow diamond) and trailer air (red octagon) push-pull knobs. In 3D the knob
+    // slides out of its bezel when pulled; a lit ring round the bezel and the name show the state.
+    const { tile, bar } = tileNode(spec.ctl, "tap", "b3d-tile");
+    const knob = h("div", { style: "position:relative;flex:none;width:86px;height:86px;transition:transform .18s cubic-bezier(.3,1.3,.5,1)" },
+      h("div", { style: "position:absolute;inset:9px" }, spec.shape),
       h("div", { style: `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;letter-spacing:.08em;color:${spec.inkColor};font-weight:800;text-align:center;line-height:1.15` },
         spec.l1, h("br"), spec.l2));
-    const state = h("div", { class: "st", style: "letter-spacing:.04em" });
-    tile.append(
-      h("div", { style: "display:flex;align-items:center;align-self:stretch;justify-content:space-between" },
-        h("div", { style: "font-size:14px;font-weight:600;letter-spacing:.02em;color:var(--legend);line-height:1.05" }, spec.l1, h("br"), spec.l2),
-        lamp.ring),
-      knob, state);
+    knob.classList.add("b3d-flat");
+    const entry = { box: knob, shape: spec.form, capColor: spec.capColor, ink: spec.inkColor, symbol: spec.symbol, color: spec.color, pulled: false, pressed: false, lit: false };
+    (window.cabDeckKnobs ||= []).push(entry);
+    const name = h("div", { class: "b3d-label", style: "letter-spacing:.1em;transition:color .15s,text-shadow .15s" }, `${spec.l1} ${spec.l2}`);
+    tile.append(knob, name);
     updaters.push(() => {
       const lvl = level(spec.indicator), on = lvl === "on", pressed = model.pressed.has(spec.ctl);
-      applyTile(tile, bar, spec.color, lvl, pressed);
-      applyLens(lamp.lens, spec.color, lvl);
+      applyTile(tile, bar, spec.color, lvl, false);
       const pulled = spec.pulledWhenOn ? on : !on;
-      setStyle(knob, "transform", pressed ? "scale(.92)" : pulled ? "scale(1.14) translateY(2px)" : "scale(1)");
-      setStyle(knob, "filter", pulled ? "drop-shadow(0 10px 7px rgba(0,0,0,.75))" : "drop-shadow(0 2px 2px rgba(0,0,0,.6)) saturate(.8)");
-      setText(state, on ? spec.onText : spec.offText);
-      setStyle(state, "color", on ? spec.color : MUTED);
+      setStyle(knob, "transform", pressed ? "scale(.92)" : pulled ? "scale(1.1)" : "scale(1)");
+      setStyle(name, "color", on ? spec.color : "");
+      setStyle(name, "textShadow", on ? `0 0 10px ${mix(spec.color, 60)}` : "");
+      if (entry.pulled !== pulled || entry.pressed !== pressed || entry.lit !== on) {
+        Object.assign(entry, { pulled, pressed, lit: on });
+        if (window.toggle3d) window.toggle3d.invalidate();
+      }
     });
     return tile;
   }
@@ -1009,10 +1209,10 @@
     return zone("ENGINE & AIR", "",
       engineTile(),
       pullKnobTile({ ctl: "cab_deck_btn_009", l1: "PARK", l2: "BRAKE", color: RED, indicator: "park_brake", pulledWhenOn: true,
-        onText: "APPLIED", offText: "RELEASED", inkColor: "#3C2B05",
+        form: "diamond", symbol: "P", capColor: "#E3B52C", inkColor: "#2E2104",
         shape: h("div", { style: "position:absolute;inset:6px;transform:rotate(45deg);border-radius:8px;background:linear-gradient(135deg,#F6DC62,#D9AB22 55%,#9D7410);box-shadow:inset 0 2px 0 rgba(255,255,255,.5),inset 0 -3px 0 rgba(0,0,0,.35)" }) }),
       pullKnobTile({ ctl: "cab_deck_btn_010", l1: "TRAILER", l2: "AIR", color: GRN, indicator: "trailer", pulledWhenOn: false,
-        onText: "CONNECTED", offText: "DISCONN.", inkColor: "#FDE6E0",
+        form: "octagon", symbol: "AIR", capColor: "#C83A2E", inkColor: "#FFF1EC",
         shape: h("div", { style: "position:absolute;inset:2px;clip-path:polygon(30% 0,70% 0,100% 30%,100% 70%,70% 100%,30% 100%,0 70%,0 30%);background:linear-gradient(135deg,#F06A5C,#C8342A 55%,#7A1912);box-shadow:inset 0 2px 0 rgba(255,255,255,.4)" }) }),
       airGauge());
   }
@@ -1041,54 +1241,22 @@
 
   // ENGINE BRAKE, DIFF LOCK, LIFT AXLE and TRAILER AXLE are hidden from the dashboard
   // (Oct 2026). Their config entries, vJoy buttons, indicators and SETUP bindings stay,
-  // so a lensTile line here brings any of them back.
-
-  function lightTile(spec) {
-    // Compact lamp button: lens with icon, name, what it is, and OFF / DIM / FULL.
-    const { tile, bar } = tileNode(spec.ctl, "tap", "compact");
-    const lens = lensNode(38, { big: true, icon: spec.icon, iconSize: 26, spin: spec.spin });
-    const state = h("div", { class: "st", style: "font-size:12px" });
-    tile.append(lens.ring,
-      h("div", { class: "lbl", style: "font-size:15px" }, spec.label),
-      h("div", { class: "desc" }, spec.desc),
-      state);
-    updaters.push(() => {
-      const lvl = level(spec.indicator);
-      applyTile(tile, bar, spec.color, lvl, model.pressed.has(spec.ctl));
-      applyLens(lens.lens, spec.color, lvl);
-      setStyle(lens.glyph, "stroke", inkFor(spec.color, lvl));
-      setText(state, lvl === "on" ? spec.onText : lvl === "dim" ? "DIM" : "OFF");
-      setStyle(state, "color", lvl === "off" ? MUTED : spec.color);
-      if (lens.spin) lens.spin.classList.toggle("on", lvl === "on");
-    });
-    return tile;
-  }
-
-  function holdTile(ctl, label, path, viewBox, iconSize) {
-    // Compact hold button (window up / down, horn).
-    const { tile, bar } = tileNode(ctl, "hold", "compact");
-    const glyph = icon(path, iconSize, viewBox, { strokeWidth: viewBox === "0 0 64 64" ? 3.6 : 2.6 });
-    tile.append(glyph, h("div", { class: "lbl", style: "font-size:14px" }, ...label), h("div", { class: "hint", style: "font-size:10px" }, "HOLD"));
-    updaters.push(() => {
-      const pressed = model.pressed.has(ctl);
-      applyTile(tile, bar, AMB, pressed ? "on" : "off", pressed);
-      setAttr(glyph, "stroke", pressed ? "#FFFFFF" : "#8B9199");
-      setStyle(glyph, "filter", pressed ? `drop-shadow(0 0 8px ${AMB})` : "none");
-    });
-    return tile;
-  }
+  // so a buttonTile line here brings any of them back.
 
   function cabZone() {
+    // ACTIVATE glows amber at rest and flares on a press; hold buttons light while held.
+    const held = (ctl) => () => (model.pressed.has(ctl) ? "on" : "off");
     return h("div", { class: "zone" }, h("div", { class: "zone-in cab" },
       h("div", { class: "span", style: "display:flex" }, h("div", { class: "zone-title" }, "CAB & ACTION")),
-      activateTile(),
-      lightTile({ ctl: "cab_deck_btn_020", label: "BEACON", desc: "AMBER WARNING", color: ORG, indicator: "beacon", icon: ICON.beacon, spin: true, onText: "ON" }),
-      lightTile({ ctl: "cab_deck_btn_021", label: "FRONT AUX", desc: "BUMPER LAMPS", color: AMB, indicator: "aux_front", icon: ICON.auxFront, onText: "FULL" }),
-      lightTile({ ctl: "cab_deck_btn_022", label: "ROOF AUX", desc: "ROOF LIGHT BAR", color: AMB, indicator: "aux_roof", icon: ICON.auxRoof, onText: "FULL" }),
+      buttonTile({ ctl: "cab_deck_btn_023", kind: "button", label: "ACTIVATE", color: AMB, icon: ICON.activate, iconBox: 24, size: 104,
+        level: () => (model.activateFlash ? "on" : "dim") }),
+      buttonTile({ ctl: "cab_deck_btn_020", label: "BEACON", color: ORG, indicator: "beacon", icon: ICON.beacon, size: 62 }),
+      buttonTile({ ctl: "cab_deck_btn_021", label: "FRONT AUX", color: AMB, indicator: "aux_front", icon: ICON.auxFront, size: 62 }),
+      buttonTile({ ctl: "cab_deck_btn_022", label: "ROOF AUX", color: AMB, indicator: "aux_roof", icon: ICON.auxRoof, size: 62 }),
       h("div", { class: "cab-row" },
-        holdTile("cab_deck_btn_011", ["WIN ", "DOWN"], ICON.chevronDown, "0 0 24 24", 28),
-        holdTile("cab_deck_btn_012", ["WIN ", "UP"], ICON.chevronUp, "0 0 24 24", 28),
-        holdTile("cab_deck_btn_007", ["HORN"], ICON.horn, "0 0 64 64", 30))));
+        buttonTile({ ctl: "cab_deck_btn_011", kind: "hold", label: "WIN DOWN", color: AMB, icon: ICON.chevronDown, iconBox: 24, size: 56, level: held("cab_deck_btn_011") }),
+        buttonTile({ ctl: "cab_deck_btn_012", kind: "hold", label: "WIN UP", color: AMB, icon: ICON.chevronUp, iconBox: 24, size: 56, level: held("cab_deck_btn_012") }),
+        buttonTile({ ctl: "cab_deck_btn_007", kind: "hold", label: "HORN", color: AMB, icon: ICON.horn, size: 56, level: held("cab_deck_btn_007") }))));
   }
 
   // --- Clock --------------------------------------------------------------
@@ -1226,8 +1394,8 @@
       setText(range, fuel ? String(Math.round(fuel.range_km * MI_PER_KM)) : "---");
       setStyle(range, "color", low ? AMB : "#E6E8EA");
       setStyle(fill, "width", `${frac * 100}%`);
-      setStyle(fill, "background", low ? `linear-gradient(180deg, #F6C878, ${AMB})` : "linear-gradient(180deg, #8EF0B0, #3FB868)");
-      setStyle(fill, "boxShadow", low ? `0 0 12px ${mix(AMB, 70)}` : "0 0 10px rgba(79,211,122,.45)");
+      setStyle(fill, "background", low ? `linear-gradient(180deg, #F6C878, ${AMB})` : "linear-gradient(180deg, var(--ok-lit), var(--ok))");
+      setStyle(fill, "boxShadow", low ? `0 0 12px ${mix(AMB, 70)}` : `0 0 10px ${mix(GRN, 45)}`);
       setText(tank, fuel ? `${Math.round(fuel.value * GAL_PER_L)} / ${Math.round(fuel.capacity * GAL_PER_L)} gal` : "— gal");
       const mpg = fuel && fuel.avg_l_per_km > 0 ? MI_PER_KM / (fuel.avg_l_per_km * GAL_PER_L) : 0;
       setText(avg, mpg ? `${mpg.toFixed(1)} mpg` : "— mpg");
@@ -1235,9 +1403,9 @@
     });
     const body = h("div", { class: "fuel-body" },
       h("div", {}, h("div", { class: "fuel-cap" }, "RANGE"), h("div", {}, range, h("span", { class: "fuel-unit", style: "color:var(--muted)" }, "MI"))),
-      h("div", {}, h("div", { class: "fuel-track" }, fill, ...ticks),
-        h("div", { class: "fuel-scale" }, h("span", {}, "E"), h("span", {}, "¼"), h("span", {}, "½"), h("span", {}, "¾"), h("span", {}, "F"))),
-      h("div", {}, h("div", { class: "fuel-cap" }, "TANK"), tank, h("div", { class: "fuel-cap" }, "AVG"), avg));
+      h("div", { class: "fuel-side" }, h("div", { class: "fuel-cap" }, "TANK"), tank, h("div", { class: "fuel-cap" }, "AVG"), avg),
+      h("div", { class: "fuel-gauge" }, h("div", { class: "fuel-track" }, fill, ...ticks),
+        h("div", { class: "fuel-scale" }, h("span", {}, "E"), h("span", {}, "¼"), h("span", {}, "½"), h("span", {}, "¾"), h("span", {}, "F"))));
     return stripZone("FUEL", status, body, lamp);
   }
 
@@ -1265,10 +1433,54 @@
       return { node: h("div", { class: "nav-cell" }, h("div", { class: "fuel-cap", style: "margin:0" }, caption), value, sub), value, sub };
     };
     const dist = cell("TO GO", true), eta = cell("ETA"), rest = cell("REST IN"), due = cell("DELIVERY");
-    // PLAN: today's shift target and the split of the next shifts, all fitted to the deadline.
-    const planCap = h("div", { class: "fuel-cap", style: "margin:0" }, "PLAN");
-    const planVal = h("div", { class: "nav-val" }), planSub = h("div", { class: "nav-sub" }), planNext = h("div", { class: "nav-sub" });
-    const plan = { node: h("div", { class: "nav-cell" }, planCap, planVal, planSub, planNext) };
+    // PLAN: the job split into shifts that fit before the deadline, drawn as a Gantt strip.
+    const planDay = h("div", { class: "plan-day" });
+    const strip = h("div", { class: "plan-strip" }), labels = h("div", { class: "plan-labels" });
+    const planStatus = h("div", { class: "plan-status" }), planNeed = h("div", { class: "nav-sub" });
+    const plan = { node: h("div", { class: "nav-cell plan-cell" },
+      h("div", { class: "plan-head" }, h("div", { class: "fuel-cap", style: "margin:0" }, "PLAN"), planDay),
+      strip, labels,
+      h("div", { class: "plan-foot" }, planStatus, planNeed)) };
+    let planSegs = [];
+    const paintPlan = (p) => {
+      const mi = (km) => Math.round(km * 0.621371);
+      const parts = !p ? [] : [
+        ...p.past_km.map((km) => ({ kind: "past", km })),
+        { kind: "today", km: Math.max(p.target_km, p.done_km) },
+        ...p.next_km.map((km) => ({ kind: "next", km })),
+      ];
+      if (planSegs.length !== parts.length) {
+        planSegs = parts.map(() => {
+          const fill = h("div", { class: "plan-fill" }), now = h("div", { class: "plan-now" });
+          return { seg: h("div", { class: "plan-seg" }, fill, now), fill, now, lab: h("div", { class: "plan-lab" }) };
+        });
+        strip.replaceChildren(...planSegs.map((x) => x.seg));
+        labels.replaceChildren(...planSegs.map((x) => x.lab));
+      }
+      const behind = p && !p.late && p.ahead_km < -0.1 * p.target_km;
+      strip.classList.toggle("late", Boolean(p && p.late));
+      strip.classList.toggle("behind", Boolean(behind));
+      parts.forEach((part, i) => {
+        const x = planSegs[i], grow = String(Math.max(part.km, 1));
+        x.seg.className = `plan-seg ${part.kind}`;
+        x.lab.className = `plan-lab ${part.kind}`;
+        setStyle(x.seg, "flexGrow", grow);
+        setStyle(x.lab, "flexGrow", grow);
+        if (part.kind === "today") {
+          const span = Math.max(part.km, 1), expected = p.done_km - p.ahead_km;
+          setStyle(x.fill, "width", `${Math.min(1, p.done_km / span) * 100}%`);
+          setStyle(x.now, "left", `${Math.max(0, Math.min(1, expected / span)) * 100}%`);
+          setText(x.lab, `${mi(p.done_km)} / ${mi(p.target_km)}`);
+        } else {
+          setText(x.lab, String(mi(part.km)));
+        }
+      });
+      setText(planDay, p ? `DAY ${p.day} / ${p.days}` : "");
+      setText(planStatus, !p ? "NO JOB" : p.late ? "PAST DEADLINE"
+        : p.ahead_km >= 0 ? `+${mi(p.ahead_km)} MI AHEAD` : `${mi(-p.ahead_km)} MI BEHIND`);
+      setStyle(planStatus, "color", !p ? MUTED : p.late ? RED : behind ? AMB : GRN);
+      setText(planNeed, p && p.required_kmh ? `NEED ${mi(p.required_kmh)} MPH AVG` : "");
+    };
     const nav = () => (model.online ? model.indicators.nav : null);
     const status = () => {
       const n = nav();
@@ -1296,16 +1508,8 @@
       setText(due.value, n && n.deadline_min !== null ? (late ? `-${duration(-n.deadline_min)}` : duration(n.deadline_min)) : "—");
       setStyle(due.value, "color", late ? RED : tight ? AMB : "#E6E8EA");
       setText(due.sub, !n || n.deadline_min === null ? "NO JOB" : `DUE ${clockText(n.clock_min + n.deadline_min)}`);
-      const p = n && n.plan;
-      const mi = (km) => Math.round(km * 0.621371);
-      setText(planCap, p ? `PLAN · DAY ${p.day}/${p.days}` : "PLAN");
-      setText(planVal, p ? `${mi(p.done_km)}/${mi(p.target_km)}` : "—");
       // Behind by more than a tenth of today's target is amber; past the deadline is red.
-      const behind = p && p.ahead_km < -0.1 * p.target_km;
-      setStyle(planVal, "color", !p ? "#E6E8EA" : p.late ? RED : behind ? AMB : GRN);
-      setText(planSub, !p ? "NO JOB" : p.late ? "PAST DEADLINE"
-        : p.ahead_km >= 0 ? `MI · +${mi(p.ahead_km)} AHEAD` : `MI · ${mi(-p.ahead_km)} BEHIND`);
-      setText(planNext, p && p.next_km.length ? `NEXT ${p.next_km.map(mi).join(" · ")}` : p ? "LAST DAY" : "");
+      paintPlan(n && n.plan);
       applyLens(lamp.lens, AMB, tired ? (model.phase ? "on" : "dim") : "off");
     });
     return stripZone("NAV", status, h("div", { class: "nav-body" }, dist.node, eta.node, rest.node, due.node, plan.node), lamp);
@@ -1444,7 +1648,7 @@
     const c = audio();
     if (!c) return;
     const t = c.currentTime;
-    const frequency = { detent: 2400, tap: 1500, hold: 1100, button: 800, ui: 1900 }[kind] || 1500;
+    const frequency = { detent: 2400, toggle: 3200, tap: 1500, hold: 1100, button: 800, ui: 1900 }[kind] || 1500;
     const length = Math.floor(c.sampleRate * 0.03);
     const buffer = c.createBuffer(1, length, c.sampleRate);
     const data = buffer.getChannelData(0);
@@ -1672,7 +1876,7 @@
       const id = segment.dataset.switch, position = Number(segment.dataset.pos);
       activePointers.set(event.pointerId, { key: segment.dataset.key, kind: "seg" });
       model.pressed.add(segment.dataset.key);
-      click("detent");
+      click(segment.classList.contains("tg") ? "toggle" : "detent");
       if (position !== model.switches[id]) setPending(id, position);
       else clearPending(id);
       send({ id, event: "set", position });
@@ -1706,7 +1910,8 @@
     activePointers.set(event.pointerId, { key: ctl, ctl, kind });
     model.pressed.add(ctl);
     if (!alreadyPressed) {
-      click(kind);
+      click(tile.classList.contains("tg") ? "toggle" : kind);
+      if (tile.onPress) tile.onPress();
       send({ id: ctl, event: "down" });
       if (ctl === "cab_deck_btn_007") hornOn();
       if (ctl === "cab_deck_btn_023") {
@@ -1900,6 +2105,335 @@
   fit();
   render();
   connect();
+</script>
+<script type="module">
+  // 3D controls (v9). One three.js canvas over the dash paints every bat-handle toggle and lit
+  // push button with real metal, a translucent lit cap and soft shadows. The controls' HTML keeps
+  // all input and logic; this only paints them. If three.js cannot load, the flat versions stay.
+  const toggles = window.cabDeckToggles || [];
+  const buttons = window.cabDeckButtons || [];
+  const knobs = window.cabDeckKnobs || [];
+  if (toggles.length || buttons.length || knobs.length) start().catch((err) => console.warn("3D controls unavailable, keeping flat ones:", err.message));
+
+  async function start() {
+    const THREE = await import("three");
+    const { RoomEnvironment } = await import("three/addons/environments/RoomEnvironment.js");
+    await document.fonts.ready;   // cap legends are drawn with the panel font
+    const dash = document.getElementById("dash");
+    const canvas = document.createElement("canvas");
+    canvas.className = "tg3d";
+    dash.append(canvas);
+
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "high-performance" });
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.autoClear = false;
+    const envMap = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+
+    // Units are millimetres. Dark "gunmetal" chrome so the parts sit into the green panel.
+    const metal = (color, roughness) => new THREE.MeshPhysicalMaterial({ color, metalness: 1, roughness, clearcoat: .3, clearcoatRoughness: .4 });
+    const shaded = (mesh) => { mesh.castShadow = true; mesh.receiveShadow = true; return mesh; };
+    const facingZ = (mesh) => { mesh.rotation.x = Math.PI / 2; return mesh; };   // lathe and cylinders are built along Y
+
+    function stage(sunPos) {
+      const scene = new THREE.Scene();
+      scene.environment = envMap;
+      scene.add(new THREE.HemisphereLight(0xcfe9dc, 0x0a1b14, .5));
+      const sun = new THREE.DirectionalLight(0xffffff, 1.7);
+      sun.position.set(...sunPos);
+      sun.castShadow = true;
+      sun.shadow.mapSize.set(1024, 1024);
+      Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 160 });
+      sun.shadow.bias = -0.0004;
+      const catcher = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), new THREE.ShadowMaterial({ opacity: .5 }));
+      catcher.receiveShadow = true;
+      scene.add(sun, catcher);
+      return scene;
+    }
+
+    /* ---- bat-handle toggle ---- */
+    const toggleScene = stage([-10, 45, 60]);
+    const washer = facingZ(shaded(new THREE.Mesh(new THREE.CylinderGeometry(12.5, 12.5, 1, 64), metal(0x4c5450, .5))));
+    washer.position.z = .5;
+    const hex = new THREE.Shape();
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 6 + i * Math.PI / 3;
+      i ? hex.lineTo(10 * Math.cos(a), 10 * Math.sin(a)) : hex.moveTo(10 * Math.cos(a), 10 * Math.sin(a));
+    }
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, 5.4, 0, Math.PI * 2, true);
+    hex.holes.push(hole);
+    const nut = shaded(new THREE.Mesh(new THREE.ExtrudeGeometry(hex, { depth: 3, bevelEnabled: true, bevelThickness: .7, bevelSize: .7, bevelSegments: 3, curveSegments: 32 }), metal(0x646d68, .33)));
+    nut.position.z = 1.7;
+    const tube = facingZ(shaded(new THREE.Mesh(new THREE.CylinderGeometry(5.2, 5.2, 8, 48), metal(0x434a46, .42))));
+    tube.position.z = 4.5;
+    const threads = [6.9, 7.8].map((z) => {
+      const ring = shaded(new THREE.Mesh(new THREE.TorusGeometry(5.25, .32, 8, 48), metal(0x575f5b, .36)));
+      ring.position.z = z;
+      return ring;
+    });
+    const dome = facingZ(shaded(new THREE.Mesh(new THREE.SphereGeometry(4.6, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), metal(0x6d7671, .3))));
+    dome.position.z = 8.5;
+    const profile = [[0, 0], [2.5, 0], [2.4, 4], [2.1, 10], [1.8, 16], [1.9, 18.5], [2.9, 20.5], [3.6, 23], [3.8, 25.5], [3.4, 28], [2.4, 29.6], [0, 30.2]]
+      .map(([r, y]) => new THREE.Vector2(r, y));
+    const lever = shaded(new THREE.Mesh(new THREE.LatheGeometry(profile, 48), metal(0x8a938e, .24)));
+    const pivot = new THREE.Group();
+    pivot.position.z = 8.5;
+    pivot.add(lever);
+    toggleScene.add(washer, nut, tube, ...threads, dome, pivot);
+    // seen from the front and a touch above, as on a dash panel
+    const toggleCam = new THREE.PerspectiveCamera(23, 1, 1, 400);
+    toggleCam.position.set(0, 10, 120);
+    toggleCam.lookAt(0, 0, 4);
+
+    /* ---- lit push button ---- */
+    const buttonScene = stage([-12, 40, 70]);
+    const bezelProfile = [[10.4, 3], [10.4, 0], [14, 0], [14.4, 1.4], [13.7, 2.9], [11.2, 3.5], [10.4, 3]].map(([r, y]) => new THREE.Vector2(r, y));
+    const bezel = facingZ(shaded(new THREE.Mesh(new THREE.LatheGeometry(bezelProfile, 64), metal(0x5a635e, .3))));
+    const well = facingZ(new THREE.Mesh(new THREE.CylinderGeometry(10.4, 10.4, 3, 48, 1, true), new THREE.MeshStandardMaterial({ color: 0x050706, roughness: .9, side: THREE.BackSide })));
+    well.position.z = 1.5;
+    buttonScene.add(bezel, well);
+    const capProfile = [[0, 0], [9.9, 0], [10, 3.4], [9.6, 4.6], [8.7, 5.25]].map(([r, y]) => new THREE.Vector2(r, y));
+    const capSideGeo = new THREE.LatheGeometry(capProfile, 64);
+    const capTopGeo = new THREE.CircleGeometry(8.75, 64);
+    const buttonCam = new THREE.PerspectiveCamera(23, 1, 1, 400);
+    buttonCam.position.set(0, 9, 78);
+    buttonCam.lookAt(0, 0, 2);
+
+    // Cap legend: engraved light glyph on dark smoked plastic. Used as colour map (unlit look)
+    // and emissive map (lit from inside: the glyph shines, the plastic glows softly).
+    function legendTexture(glyph) {
+      const size = 256, c = document.createElement("canvas");
+      c.width = c.height = size;
+      const g = c.getContext("2d");
+      g.fillStyle = "rgb(62,70,66)";
+      g.fillRect(0, 0, size, size);
+      g.strokeStyle = g.fillStyle = "rgb(236,238,236)";
+      g.lineCap = g.lineJoin = "round";
+      if (glyph.path) {
+        const box = glyph.box || 64;   // icons come in 64- and 24-unit boxes
+        g.translate(size * .2, size * .2);
+        g.scale(size * .6 / box, size * .6 / box);
+        g.lineWidth = box === 24 ? 2.2 : 4.2;
+        g.stroke(new Path2D(glyph.path));
+      } else {
+        const font = getComputedStyle(document.body).fontFamily;
+        g.font = `700 ${size * .2}px ${font}`;
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        glyph.text.forEach((line, i) => g.fillText(line, size / 2, size / 2 + (i - (glyph.text.length - 1) / 2) * size * .24));
+      }
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      return tex;
+    }
+
+    const cssColor = (value) => {
+      // resolve var(--ok) and friends to a real colour
+      const probe = cssColor.probe ||= Object.assign(document.createElement("div"), { style: "display:none" });
+      if (!probe.isConnected) document.body.append(probe);
+      probe.style.color = value;
+      return new THREE.Color(getComputedStyle(probe).color);
+    };
+
+    for (const b of buttons) {
+      const legend = legendTexture(b.glyph);
+      const plastic = { color: 0xc9d0cc, roughness: .16, metalness: 0, clearcoat: 1, clearcoatRoughness: .1, transparent: true, opacity: .93 };
+      const side = new THREE.MeshPhysicalMaterial({ ...plastic, color: 0x2a302d, emissive: 0x000000 });
+      const top = new THREE.MeshPhysicalMaterial({ ...plastic, map: legend, emissiveMap: legend, emissive: 0x000000 });
+      const cap = new THREE.Group();
+      cap.add(facingZ(shaded(new THREE.Mesh(capSideGeo, side))));
+      const face = new THREE.Mesh(capTopGeo, top);
+      face.position.z = 5.26;
+      cap.add(face);
+      const lamp = new THREE.PointLight(0xffffff, 0, 34, 1.6);   // the bulb inside lights the bezel too
+      lamp.position.z = 2;
+      const group = new THREE.Group();
+      group.add(cap, lamp);
+      group.visible = false;
+      buttonScene.add(group);
+      b.three = { group, cap, side, top, lamp, depth: 0, speed: 0 };
+    }
+
+    /* ---- push-pull knob (park brake, trailer air) ---- */
+    const knobScene = stage([-12, 40, 70]);
+    const knobBezelProfile = [[4.2, 2.6], [4.2, 0], [12.5, 0], [12.9, 1.2], [12.2, 2.4], [5.2, 2.9], [4.2, 2.6]].map(([r, y]) => new THREE.Vector2(r, y));
+    knobScene.add(facingZ(shaded(new THREE.Mesh(new THREE.LatheGeometry(knobBezelProfile, 64), metal(0x5a635e, .3)))));
+    // the shaft runs from the bezel to the underside of the cap, so it only shows when pulled
+    const knobShaft = facingZ(shaded(new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 1, 32), metal(0x9aa39e, .25))));
+    knobScene.add(knobShaft);
+    // seen a little from above, so the knob's thick sides and the pulled-out shaft show
+    const knobCam = new THREE.PerspectiveCamera(24, 1, 1, 400);
+    knobCam.position.set(0, 24, 84);
+    knobCam.lookAt(0, -1, 5);
+
+    function knobShape(form) {
+      const shape = new THREE.Shape();
+      if (form === "diamond") {
+        // a rounded square turned 45 degrees
+        const a = 8.6, r = 2.4;
+        shape.moveTo(-a + r, -a);
+        shape.lineTo(a - r, -a); shape.quadraticCurveTo(a, -a, a, -a + r);
+        shape.lineTo(a, a - r); shape.quadraticCurveTo(a, a, a - r, a);
+        shape.lineTo(-a + r, a); shape.quadraticCurveTo(-a, a, -a, a - r);
+        shape.lineTo(-a, -a + r); shape.quadraticCurveTo(-a, -a, -a + r, -a);
+      } else {
+        for (let i = 0; i < 8; i++) {
+          const ang = Math.PI / 8 + i * Math.PI / 4;
+          i ? shape.lineTo(11.4 * Math.cos(ang), 11.4 * Math.sin(ang)) : shape.moveTo(11.4 * Math.cos(ang), 11.4 * Math.sin(ang));
+        }
+      }
+      return shape;
+    }
+
+    // One big symbol on the cap ("P" in a ring for the park brake), readable at a glance.
+    function knobLegend(symbol, ink) {
+      const size = 256, c = document.createElement("canvas");
+      c.width = c.height = size;
+      const g = c.getContext("2d");
+      g.fillStyle = g.strokeStyle = ink;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      const font = getComputedStyle(document.body).fontFamily;
+      if (symbol.length === 1) {
+        g.lineWidth = size * .06;
+        g.beginPath();
+        g.arc(size / 2, size / 2, size * .3, 0, Math.PI * 2);
+        g.stroke();
+        g.font = `800 ${size * .38}px ${font}`;
+        g.fillText(symbol, size / 2, size / 2 + size * .02);
+      } else {
+        g.font = `800 ${size * .3}px ${font}`;
+        g.fillText(symbol, size / 2, size / 2 + size * .02);
+      }
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      return tex;
+    }
+
+    for (const k of knobs) {
+      const cap = new THREE.Group();
+      const body = shaded(new THREE.Mesh(
+        new THREE.ExtrudeGeometry(knobShape(k.shape), { depth: 5.2, bevelEnabled: true, bevelThickness: 1.8, bevelSize: 1.5, bevelSegments: 6, curveSegments: 16 }),
+        new THREE.MeshPhysicalMaterial({ color: k.capColor, roughness: .32, metalness: 0, clearcoat: 1, clearcoatRoughness: .15, sheen: .3 })));
+      if (k.shape === "diamond") body.rotation.z = Math.PI / 4;
+      const legend = new THREE.Mesh(new THREE.PlaneGeometry(15.5, 15.5), new THREE.MeshBasicMaterial({ map: knobLegend(k.symbol, k.ink), transparent: true }));
+      legend.position.z = 7.05;
+      cap.add(body, legend);
+      // halo: a lit ring round the bezel shows the state from across the cab
+      const haloMat = new THREE.MeshStandardMaterial({ color: 0x0b1410, roughness: .5, emissive: 0x000000 });
+      // sits just outside the bezel, so the cap never hides it
+      const halo = new THREE.Mesh(new THREE.TorusGeometry(14.6, .85, 16, 96), haloMat);
+      halo.position.z = .6;
+      const glow = new THREE.PointLight(0xffffff, 0, 40, 1.4);
+      glow.position.set(0, 0, 3);
+      const group = new THREE.Group();
+      group.add(cap, halo, glow);
+      group.visible = false;
+      knobScene.add(group);
+      k.three = { group, cap, haloMat, glow, z: 2.6, speed: 0 };
+    }
+
+    /* ---- drawing ---- */
+    const PRESS_DEPTH = 1.8, BUTTON_SPRING = 2200, BUTTON_DAMPING = 60;
+    const KNOB_IN = 2.6, KNOB_OUT = 11, KNOB_SPRING = 900, KNOB_DAMPING = 34;   // a pulled knob stands 8 mm out
+    const GLOW = { on: 3.2, dim: 1.1, off: 0 };
+    let queued = false, lastFrame = 0;
+    const invalidate = () => { if (!queued) { queued = true; requestAnimationFrame(draw); } };
+
+    function viewport(box, dashRect, scale, h) {
+      const r = box.getBoundingClientRect();
+      const x = (r.left - dashRect.left) / scale, y = (r.top - dashRect.top) / scale;
+      const bw = r.width / scale, bh = r.height / scale;
+      if (!bw || !bh) return null;
+      renderer.setViewport(x, h - y - bh, bw, bh);
+      renderer.setScissor(x, h - y - bh, bw, bh);
+      return bw / bh;
+    }
+
+    function draw(now = performance.now()) {
+      queued = false;
+      const dt = Math.min(.03, lastFrame ? (now - lastFrame) / 1000 : .016);
+      lastFrame = now;
+      const dashRect = dash.getBoundingClientRect();
+      const w = dash.offsetWidth, h = dash.offsetHeight;
+      if (!w || !h) return;
+      const scale = dashRect.width / w;   // the panel is scaled with a CSS transform
+      renderer.setPixelRatio(Math.min(3, (window.devicePixelRatio || 1) * scale));
+      renderer.setSize(w, h, false);
+      renderer.setScissorTest(false);
+      renderer.clear();
+      renderer.setScissorTest(true);
+
+      for (const t of toggles) {
+        const aspect = viewport(t.box, dashRect, scale, h);
+        if (!aspect) continue;
+        toggleCam.aspect = aspect;
+        toggleCam.updateProjectionMatrix();
+        pivot.rotation.x = Math.PI / 2 - t.motion.angle;   // angle > 0 tips the lever up
+        renderer.render(toggleScene, toggleCam);
+      }
+
+      let moving = false;
+      for (const b of buttons) {
+        const m = b.three;
+        // the cap sinks while pressed and springs back
+        const target = b.pressed ? -PRESS_DEPTH : 0;
+        m.speed += ((target - m.depth) * BUTTON_SPRING - m.speed * BUTTON_DAMPING) * dt;
+        m.depth += m.speed * dt;
+        if (Math.abs(target - m.depth) < .01 && Math.abs(m.speed) < .05) { m.depth = target; m.speed = 0; } else moving = true;
+        m.cap.position.z = m.depth;
+        const color = cssColor(b.color), glow = GLOW[b.level] ?? 0;
+        m.top.emissive.copy(color).multiplyScalar(glow);
+        m.side.emissive.copy(color).multiplyScalar(glow * .25);
+        m.top.color.set(glow ? 0xffffff : 0xc9d0cc).lerp(color, glow ? .35 : 0);
+        m.lamp.color.copy(color);
+        m.lamp.intensity = glow * 220;
+        const aspect = viewport(b.box, dashRect, scale, h);
+        if (!aspect) continue;
+        buttonCam.aspect = aspect;
+        buttonCam.updateProjectionMatrix();
+        m.group.visible = true;
+        renderer.render(buttonScene, buttonCam);
+        m.group.visible = false;
+      }
+      for (const k of knobs) {
+        const m = k.three;
+        const target = (k.pulled ? KNOB_OUT : KNOB_IN) - (k.pressed ? 1 : 0);
+        m.speed += ((target - m.z) * KNOB_SPRING - m.speed * KNOB_DAMPING) * dt;
+        m.z += m.speed * dt;
+        if (Math.abs(target - m.z) < .01 && Math.abs(m.speed) < .05) { m.z = target; m.speed = 0; } else moving = true;
+        m.cap.position.z = m.z;
+        knobShaft.scale.y = Math.max(.01, m.z);
+        knobShaft.position.z = m.z / 2;
+        const color = cssColor(k.color);
+        // keep the ring in the state colour: a strong emissive would tone-map to white
+        m.haloMat.emissive.copy(color).multiplyScalar(k.lit ? 1.2 : 0);
+        if (k.lit) m.haloMat.color.copy(color); else m.haloMat.color.set(0x0b1410);
+        m.glow.color.copy(color);
+        m.glow.intensity = k.lit ? 260 : 0;
+        const aspect = viewport(k.box, dashRect, scale, h);
+        if (!aspect) continue;
+        knobCam.aspect = aspect;
+        knobCam.updateProjectionMatrix();
+        m.group.visible = true;
+        renderer.render(knobScene, knobCam);
+        m.group.visible = false;
+      }
+      if (moving) invalidate(); else lastFrame = 0;
+    }
+
+    window.toggle3d = { invalidate, draw };
+    new ResizeObserver(invalidate).observe(dash);
+    addEventListener("resize", invalidate);
+    draw();
+    document.documentElement.classList.add("tg3d-on");
+  }
 </script>
 </body>
 </html>

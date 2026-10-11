@@ -72,6 +72,7 @@ PLAN_MAX_DAYS = 14
 
 MS_TO_MPH = 2.236936
 KM_TO_MI = 0.621371
+L_TO_GAL = 0.264172
 
 INDICATORS = (
     "engine",
@@ -165,6 +166,7 @@ class JobPlan:
     last_clock: int = 0
     shift_min: int = SHIFT_DEFAULT_MIN
     sleep_min: int = SLEEP_DEFAULT_MIN
+    past_km: list[float] = field(default_factory=list)   # driven in each finished shift
     view: dict[str, Any] | None = None
 
 
@@ -184,6 +186,7 @@ class DeckState:
     sockets: set[WebSocket] = field(default_factory=set)
     dash_sockets: set[WebSocket] = field(default_factory=set)
     dash: dict[str, Any] = field(default_factory=lambda: {"type": "dash", "live": False})
+    trip: dict[str, Any] = field(default_factory=dict)
     game: dict[str, Any] = field(default_factory=lambda: {"telemetry": False})
     indicators: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_state_message: dict[str, Any] | None = None
@@ -621,9 +624,20 @@ def compute_nav(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def compute_dash(data: dict[str, Any]) -> dict[str, Any]:
+def update_trip(trip: dict[str, Any], data: dict[str, Any]) -> float:
+    """Miles since the engine was last started (the SDK has no trip meter of its own)."""
+    odometer = float(data.get("truckOdometer") or 0.0)
+    running = bool(data.get("engineEnabled"))
+    if trip.get("start") is None or (running and not trip.get("running")):
+        trip["start"] = odometer
+    trip["running"] = running
+    return max(0.0, odometer - trip["start"]) * KM_TO_MI
+
+
+def compute_dash(data: dict[str, Any], trip_mi: float = 0.0) -> dict[str, Any]:
     """Instrument cluster values in the units ATS shows: mph, psi, °F, miles."""
     capacity = float(data.get("fuelCapacity") or 0.0)
+    l_per_km = float(data.get("fuelAvgConsumption") or 0.0)
     return {
         "type": "dash",
         "live": True,
@@ -643,6 +657,9 @@ def compute_dash(data: dict[str, Any]) -> dict[str, Any]:
         "diff_lock": bool(data.get("differentialLock")),
         "high_beam": bool(data.get("lightsBeamHigh")),
         "odometer_mi": round(float(data.get("truckOdometer") or 0.0) * KM_TO_MI, 1),
+        "trip_mi": round(trip_mi, 1),
+        "range_mi": round(float(data.get("fuelRange") or 0.0) * KM_TO_MI),
+        "avg_mpg": round(KM_TO_MI / (l_per_km * L_TO_GAL), 1) if l_per_km > 0 else 0.0,
     }
 
 
@@ -721,6 +738,8 @@ def remaining_km(plan: JobPlan, data: dict[str, Any]) -> float:
 
 def start_shift(plan: JobPlan, odometer: float, rest_min: int, remaining: float, minutes_left: int) -> None:
     """Fix today's target: today's share of the remaining distance by available driving time."""
+    if plan.day > 0:
+        plan.past_km.append(round(odometer - plan.shift_start_km, 1))
     plan.day += 1
     plan.shift_start_km = odometer
     plan.shift_start_rest = max(rest_min, 1)
@@ -745,7 +764,7 @@ def update_plan(plan: JobPlan, data: dict[str, Any]) -> dict[str, Any] | None:
 
     if key != plan.job_key:
         log.info("Delivery plan: new job to %s, %d min to deadline.", key[0] or "?", minutes_left)
-        plan.job_key, plan.day = key, 0
+        plan.job_key, plan.day, plan.past_km = key, 0, []
         plan.job_start_km = odometer
         plan.planned_km = float(data.get("plannedDistanceKm") or 0.0)
         start_shift(plan, odometer, rest, remaining_km(plan, data), minutes_left)
@@ -771,6 +790,7 @@ def update_plan(plan: JobPlan, data: dict[str, Any]) -> dict[str, Any] | None:
         "done_km": round(done, 1),
         "target_km": round(plan.shift_target_km, 1),
         "ahead_km": round(done - plan.shift_target_km * elapsed, 1),
+        "past_km": list(plan.past_km),
         "next_km": [round(later * s / future_total, 1) for s in shifts[1:]] if future_total > 0 else [],
         "required_kmh": round(remaining / total * 60, 1) if total > 0 else None,
         "late": minutes_left <= 0 or total <= 0,
@@ -845,7 +865,7 @@ async def dash_loop(state: DeckState) -> None:
         if state.dash_sockets:
             data = state.read_telemetry()
             active = data is not None and bool(data.get("sdkActive"))
-            state.dash = compute_dash(data) if active else {"type": "dash", "live": False}
+            state.dash = compute_dash(data, update_trip(state.trip, data)) if active else {"type": "dash", "live": False}
             await publish_dash(state)
         # Sleep to the next tick rather than a fixed pause, so the work does not slow the rate.
         deadline = max(deadline + DASH_POLL_S, loop.time())
