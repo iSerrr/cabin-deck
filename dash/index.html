@@ -455,6 +455,10 @@ function connectLive() {
 
 /* ---------- frame loop ---------- */
 
+// Needle follow rate per second. Live data comes at 60 Hz, so it only needs a touch of
+// smoothing (~25 ms); the demo drive is gentler.
+const SMOOTH_LIVE = 40;
+const SMOOTH_DEMO = 10;
 const BOOT_SECONDS = 2.4;   // classic needle self-test sweep on key-on
 const smooth = { speed: 0, rpm: 0, air: 0, air2: 0, fuel: 0, oil: 0, water: 0 };
 
@@ -507,7 +511,7 @@ function start() {
     const sweep = Math.sin(Math.PI * Math.min(now / (BOOT_SECONDS * .9), 1));
     for (const k in smooth) {
       if (booting) smooth[k] = Math.max(sweep, k === "speed" || k === "rpm" ? 0 : target[k] * (1 - sweep));
-      else smooth[k] += (target[k] - smooth[k]) * (1 - Math.exp(-dt * 10));
+      else smooth[k] += (target[k] - smooth[k]) * (1 - Math.exp(-dt * (isLive() ? SMOOTH_LIVE : SMOOTH_DEMO)));
     }
     const order = [["speed", -1], ["rpm", -1], ["air", "air2"], ["fuel", -1], ["oil", -1], ["water", -1]];
     order.forEach(([a, b], i) => {

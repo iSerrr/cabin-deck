@@ -48,6 +48,8 @@ MAX_LOG_LINES = 1000
 # Single press used by the SETUP page to bind a vJoy button in the game menu.
 BIND_PRESS_S = 0.15
 TELEMETRY_POLL_S = 0.1
+# The instrument cluster reads the game on its own, much faster loop so needles keep up.
+DASH_POLL_S = 1 / 60
 TELEMETRY_RETRY_S = 5.0
 # Telemetry needs a moment to reflect a press; skip corrections right after one.
 SWITCH_SETTLE_S = 1.0
@@ -780,12 +782,10 @@ def update_from_telemetry(state: DeckState, data: dict[str, Any] | None) -> None
     if data is None:
         state.game = {"telemetry": False}
         state.indicators = {}
-        state.dash = {"type": "dash", "live": False}
         return
     active = bool(data.get("sdkActive"))
     state.game = {"telemetry": True, "active": active, "paused": bool(data.get("paused"))}
     state.indicators = compute_indicators(data) if active else {}
-    state.dash = compute_dash(data) if active else {"type": "dash", "live": False}
     if active:
         record_pace(state.pace, data)
         add_rest_range(state.indicators["nav"], pace_estimate(state.pace))
@@ -834,8 +834,22 @@ async def telemetry_loop(state: DeckState) -> None:
     while True:
         update_from_telemetry(state, state.read_telemetry())
         await publish_state(state)
-        await publish_dash(state)
         await asyncio.sleep(TELEMETRY_POLL_S)
+
+
+async def dash_loop(state: DeckState) -> None:
+    """Read and send cluster values at 60 Hz, but only while a dash is connected."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time()
+    while True:
+        if state.dash_sockets:
+            data = state.read_telemetry()
+            active = data is not None and bool(data.get("sdkActive"))
+            state.dash = compute_dash(data) if active else {"type": "dash", "live": False}
+            await publish_dash(state)
+        # Sleep to the next tick rather than a fixed pause, so the work does not slow the rate.
+        deadline = max(deadline + DASH_POLL_S, loop.time())
+        await asyncio.sleep(deadline - loop.time())
 
 
 async def publish_dash(state: DeckState) -> None:
@@ -1034,11 +1048,13 @@ def handle_message(state: DeckState, text: str, held: set[int]) -> dict[str, Any
 def create_app(state: DeckState, dash_pages: dict[int, Path]) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        telemetry_task = asyncio.create_task(telemetry_loop(state))
+        tasks = [asyncio.create_task(telemetry_loop(state)), asyncio.create_task(dash_loop(state))]
         yield
-        telemetry_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await telemetry_task
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with suppress(asyncio.CancelledError):
+                await task
         release_all(state)
         log.info("Server stopped, all buttons released.")
 
