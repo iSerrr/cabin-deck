@@ -23,33 +23,32 @@
   #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .ov { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; line-height: 1; pointer-events: none; font-variant-numeric: tabular-nums; }
 
-  .num { font-size: calc(var(--u) * 3.3); font-weight: 500; color: var(--dim); transition: color .15s, text-shadow .15s; }
+  .num { font-size: calc(var(--u) * 4.2); font-weight: 500; color: var(--dim); transition: color .15s, text-shadow .15s; }
   .num.on { color: var(--cream); text-shadow: 0 0 calc(var(--u) * .8) rgba(123,239,181,.55); }
   .num.hot { color: rgba(255,74,58,.45); }
   .num.hot.on { color: var(--red); text-shadow: 0 0 calc(var(--u) * .8) rgba(255,74,58,.7); }
-  .end { font-size: calc(var(--u) * 1.9); font-weight: 500; color: var(--dim); }
 
-  .hub-big { font-size: calc(var(--u) * 13); font-weight: 500; transform: translate(-50%, -50%) skewX(-6deg); text-shadow: 0 0 calc(var(--u) * 2) rgba(123,239,181,.35); }
-  .hub-sub { font-size: calc(var(--u) * 2.1); font-weight: 700; letter-spacing: .22em; color: var(--mint); opacity: .85; }
-  .gap { font-size: calc(var(--u) * 1.9); font-weight: 700; letter-spacing: .3em; color: var(--dim); }
-  .cap { font-size: calc(var(--u) * 1.7); font-weight: 700; letter-spacing: .28em; color: var(--dim); }
-  .val { font-size: calc(var(--u) * 2.6); font-weight: 500; color: var(--cream); }
+  .hub-big { font-size: calc(var(--u) * 16.5); font-weight: 500; transform: translate(-50%, -50%) skewX(-6deg); text-shadow: 0 0 calc(var(--u) * 2) rgba(123,239,181,.35); }
+  .hub-sub { font-size: calc(var(--u) * 2.7); font-weight: 700; letter-spacing: .22em; color: var(--mint); opacity: .85; }
+  .gap { font-size: calc(var(--u) * 2.4); font-weight: 700; letter-spacing: .3em; color: var(--dim); }
+  /* corner gauges are small: keep their text readable on a phone */
+  .cap { font-size: max(8px, calc(var(--u) * 1.4)); font-weight: 700; letter-spacing: .24em; color: var(--dim); }
+  .val { font-size: max(10px, calc(var(--u) * 2.1)); font-weight: 500; color: var(--cream); }
   .val.hot { color: var(--red); }
 
-  .brand { font-size: calc(var(--u) * 2); font-weight: 700; letter-spacing: .42em; color: var(--dim); transform: translate(0, -50%); }
-  .brand b { color: var(--cream); font-weight: 700; }
-  .meta { font-size: calc(var(--u) * 2.2); font-weight: 500; letter-spacing: .14em; color: var(--dim); transform: translate(-100%, -50%); }
-  .meta b { color: var(--cream); font-weight: 500; }
+  .demo { font-size: max(8px, calc(var(--u) * 1.4)); font-weight: 700; letter-spacing: .3em; color: var(--dim); }
 
   .blink { width: calc(var(--u) * 4.6); height: calc(var(--u) * 4.6); opacity: .14; transition: opacity .06s; }
   .blink path { fill: var(--mint); }
   .blink.on { opacity: 1; filter: drop-shadow(0 0 calc(var(--u) * 1) rgba(123,239,181,.9)); }
 
+  /* lamps sit in the gap under the dials and show only while lit */
+  .tt-row { display: flex; gap: calc(var(--u) * .8); }
   .tt {
-    padding: calc(var(--u) * .55) calc(var(--u) * 1.3); border: 1px solid rgba(228,220,196,.12); border-radius: calc(var(--u) * .6);
-    font-size: calc(var(--u) * 1.75); font-weight: 700; letter-spacing: .22em; color: rgba(228,220,196,.22);
+    display: none; padding: calc(var(--u) * .5) calc(var(--u) * 1); border: 1px solid; border-radius: calc(var(--u) * .6);
+    font-size: max(9px, calc(var(--u) * 1.5)); font-weight: 700; letter-spacing: .2em;
   }
-  .tt.on { color: var(--c); border-color: var(--c); box-shadow: 0 0 calc(var(--u) * 1.4) -0.2em var(--c), inset 0 0 calc(var(--u) * 1) -0.3em var(--c); text-shadow: 0 0 calc(var(--u) * .8) var(--c); }
+  .tt.on { display: block; color: var(--c); border-color: var(--c); box-shadow: 0 0 calc(var(--u) * 1.4) -0.2em var(--c), inset 0 0 calc(var(--u) * 1) -0.3em var(--c); text-shadow: 0 0 calc(var(--u) * .8) var(--c); }
 </style>
 </head>
 <body>
@@ -206,12 +205,10 @@ void main() {
   vec3 col = mix(G1, G0, smoothstep(0., .9, length(p - vec2(0., .35))));
   col *= .94 + .06 * sin(p.y * 900.);
   col += G3 * .5 * exp(-length(p * vec2(.6, 1.)) * 2.5);
-  float fade = 1. - smoothstep(.25, 1.05, abs(p.x));
-  col += MINT * (exp(-abs(p.y + .405) / .0016) + exp(-abs(p.y - .405) / .0016)) * fade * .3 * uBoot;
 
   for (int i = 0; i < 6; i++) col = dial(col, p, uD[i], uP[i], uW[i], uVal[i], uMark[i]);
 
-  col *= 1. - .35 * smoothstep(.5, 1.25, length(p * vec2(.85, 1.4)));
+  col *= 1. - .2 * smoothstep(.5, 1.25, length(p * vec2(.85, 1.4)));
   col += (hash(gl_FragCoord.xy + fract(uTime) * 100.) - .5) * 2. / 255.;
   gl_FragColor = vec4(clamp(col, 0., 1.), 1.);
 }
@@ -225,21 +222,25 @@ const MAX_DPR = 2;            // cap render resolution to keep the shader cheap
 const SW_BIG = 1.5 * Math.PI;
 const SW_SMALL = 4 / 3 * Math.PI;
 
+// Main dials fill the full height; the small gauges live in the corners the circles leave free.
+const BIG_R = .462, BIG_X = .535;
+const SMALL_R = .088, SMALL_X = .987, SMALL_Y = .402;
+
 const DIALS = [
-  { id: "speed", c: [-.40, 0], R: .36, sw: SW_BIG, maj: 9, min: 45, seg: 45, warn: [-1, 2], big: 1, label: i => i * 10, gap: "MPH" },
-  { id: "rpm",   c: [ .40, 0], R: .36, sw: SW_BIG, maj: 5, min: 25, seg: 50, warn: [-1, .84], big: 1, label: i => i * 5, gap: "×100 RPM" },
-  { id: "air",   c: [-.94,  .19], R: .12, sw: SW_SMALL, maj: 3, min: 15, seg: 30, warn: [.4, 2], ends: ["0", "150"], cap: "AIR" },
-  { id: "fuel",  c: [-.94, -.19], R: .12, sw: SW_SMALL, maj: 4, min: 8,  seg: 24, warn: [.125, 2], ends: ["E", "F"], cap: "FUEL" },
-  { id: "oil",   c: [ .94,  .19], R: .12, sw: SW_SMALL, maj: 4, min: 20, seg: 30, warn: [.15, 2], ends: ["0", "100"], cap: "OIL" },
-  { id: "water", c: [ .94, -.19], R: .12, sw: SW_SMALL, maj: 3, min: 15, seg: 30, warn: [-1, .8], ends: ["100", "250"], cap: "WATER" },
+  { id: "speed", c: [-BIG_X, 0], R: BIG_R, sw: SW_BIG, maj: 9, min: 45, seg: 45, warn: [-1, 2], big: 1, label: i => i * 10, gap: "MPH" },
+  { id: "rpm",   c: [ BIG_X, 0], R: BIG_R, sw: SW_BIG, maj: 5, min: 25, seg: 50, warn: [-1, .84], big: 1, label: i => i * 5, gap: "×100 RPM" },
+  { id: "air",   c: [-SMALL_X,  SMALL_Y], R: SMALL_R, sw: SW_SMALL, maj: 3, min: 15, seg: 30, warn: [.4, 2], cap: "AIR" },
+  { id: "fuel",  c: [-SMALL_X, -SMALL_Y], R: SMALL_R, sw: SW_SMALL, maj: 4, min: 8,  seg: 24, warn: [.125, 2], cap: "FUEL" },
+  { id: "oil",   c: [ SMALL_X,  SMALL_Y], R: SMALL_R, sw: SW_SMALL, maj: 4, min: 20, seg: 30, warn: [.15, 2], cap: "OIL" },
+  { id: "water", c: [ SMALL_X, -SMALL_Y], R: SMALL_R, sw: SW_SMALL, maj: 3, min: 15, seg: 30, warn: [-1, .8], cap: "WATER" },
 ];
 
 const TELLTALES = [
-  { id: "park",   text: "PARK BRAKE", c: "var(--red)" },
-  { id: "jake",   text: "ENGINE BRAKE", c: "var(--amber)" },
+  { id: "park",   text: "PARK", c: "var(--red)" },
+  { id: "jake",   text: "JAKE", c: "var(--amber)" },
   { id: "cruise", text: "CRUISE", c: "var(--mint)" },
-  { id: "diff",   text: "DIFF LOCK", c: "var(--amber)" },
-  { id: "beam",   text: "HIGH BEAM", c: "var(--blue)" },
+  { id: "diff",   text: "DIFF", c: "var(--amber)" },
+  { id: "beam",   text: "HIGH", c: "var(--blue)" },
 ];
 
 const stage = document.getElementById("stage");
@@ -279,31 +280,33 @@ function buildOverlay() {
       }
       addEl("gap", d.gap, d.c[0], d.c[1] - .74 * d.R);
     } else {
-      addEl("end", d.ends[0], ...pointOnDial(d, 0, .6));
-      addEl("end", d.ends[1], ...pointOnDial(d, 1, .6));
       addEl("cap", d.cap, d.c[0], d.c[1] - .45 * d.R);
       ui[d.id] = addEl("val", "", d.c[0], d.c[1] - .78 * d.R);
     }
   }
-  ui.speed = addEl("hub-big", "0", -.40, .012);
-  ui.gear = addEl("hub-big", "N", .40, .025);
-  ui.rpm = addEl("hub-sub", "650", .40, -.075);
-  ui.set = addEl("hub-sub", "", -.40, -.075);
+  const [speedDial, rpmDial] = DIALS;
+  ui.speed = addEl("hub-big", "0", speedDial.c[0], .033 * BIG_R);
+  ui.gear = addEl("hub-big", "N", rpmDial.c[0], .07 * BIG_R);
+  ui.rpm = addEl("hub-sub", "650", rpmDial.c[0], -.21 * BIG_R);
+  ui.set = addEl("hub-sub", "", speedDial.c[0], -.21 * BIG_R);
 
-  const brand = addEl("brand", "<b>379</b> · ALPHA GEN", -1.02, .455);
-  brand.style.transform = "translate(0, -50%)";
-  ui.meta = addEl("meta", "", 1.02, .455);
-
+  // top gap between the dials: blinkers and the demo tag
   const arrow = d => `<svg class="blink" viewBox="0 0 24 24"><path d="${d}"/></svg>`;
-  ui.left = addEl("", arrow("M10 4 2 12l8 8v-5h12V9H10z"), -.075, .45).firstChild;
-  ui.right = addEl("", arrow("M14 4l8 8-8 8v-5H2V9h12z"), .075, .45).firstChild;
+  ui.left = addEl("", arrow("M10 4 2 12l8 8v-5h12V9H10z"), -.07, .455).firstChild;
+  ui.right = addEl("", arrow("M14 4l8 8-8 8v-5H2V9h12z"), .07, .455).firstChild;
+  ui.demo = addEl("demo", "DEMO", 0, .405);
 
+  // bottom gap: lamps, shown only while lit
+  const row = addEl("tt-row", "", 0, -.462);
   ui.tt = {};
-  TELLTALES.forEach((t, i) => {
-    const el = addEl("tt", t.text, (i - (TELLTALES.length - 1) / 2) * .26, -.455);
+  for (const t of TELLTALES) {
+    const el = document.createElement("div");
+    el.className = "tt";
+    el.textContent = t.text;
     el.style.setProperty("--c", t.c);
+    row.appendChild(el);
     ui.tt[t.id] = el;
-  });
+  }
   return ui;
 }
 
@@ -469,12 +472,7 @@ function updateOverlay(ui, s, shown, booting, now) {
   ui.air.classList.toggle("hot", s.air1 < 60);
   ui.water.classList.toggle("hot", s.water > 220);
 
-  const clock = new Date().toTimeString().slice(0, 5);
-  const source = isLive() ? "" : "DEMO &nbsp;·&nbsp; ";
-  if (ui.meta.dataset.k !== source + clock + Math.floor(s.odo)) {
-    ui.meta.dataset.k = source + clock + Math.floor(s.odo);
-    ui.meta.innerHTML = `${source}ODO <b>${Math.floor(s.odo).toLocaleString("en-US").replace(",", " ")}</b> MI &nbsp;·&nbsp; <b>${clock}</b>`;
-  }
+  setText(ui.demo, isLive() ? "" : "DEMO");
 
   for (const id of ["speed", "rpm"]) {
     for (const n of ui.nums[id]) n.el.classList.toggle("on", n.t <= shown[id] + .002);
