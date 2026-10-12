@@ -648,6 +648,8 @@ def compute_dash(data: dict[str, Any], trip_mi: float = 0.0) -> dict[str, Any]:
         "fuel": round(float(data.get("fuel") or 0.0) / capacity, 4) if capacity > 0 else 0.0,
         "oil_psi": round(float(data.get("oilPressure") or 0.0), 1),
         "water_f": round(float(data.get("waterTemperature") or 0.0) * 9 / 5 + 32, 1),
+        "oil_temp_f": round(float(data.get("oilTemperature") or 0.0) * 9 / 5 + 32, 1),
+        "battery_v": round(float(data.get("batteryVoltage") or 0.0), 1),
         "cruise": bool(data.get("cruiseControl")),
         "cruise_mph": round(float(data.get("cruiseControlSpeed") or 0.0) * MS_TO_MPH),
         "blinker_left": bool(data.get("blinkerLeftOn")),

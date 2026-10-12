@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#050806">
+<meta name="theme-color" content="#04090A">
 <title>Alpha Gen Dash v2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,8 +13,8 @@
      from the bottom centre outwards, up the outer side and back along the top.
      WebGL2 draws the scales, then a bloom pass turns their glow into light; HTML only draws text.
      Live data comes from server.py over /ws/dash; without the game it runs a demo drive. */
-  :root { --cream: #E4DCC4; --mint: #7BEFB5; --amber: #FFB547; --red: #FF4A3A; --blue: #6FB6FF; --dim: rgba(228,220,196,.28); }
-  html, body { margin: 0; height: 100%; background: #050806; overflow: hidden; }
+  :root { --cream: #E4DCC4; --mint: #77E4ED; --amber: #FFB547; --red: #FF4A3A; --blue: #6FB6FF; --dim: rgba(228,220,196,.28); }
+  html, body { margin: 0; height: 100%; background: #04090A; overflow: hidden; }
   body {
     display: flex; align-items: center; justify-content: center;
     font-family: "Saira Semi Condensed", "Arial Narrow", sans-serif; color: var(--cream);
@@ -27,21 +27,21 @@
   .ov.rgt { transform: translate(-100%, -50%); }
 
   .num { font-size: calc(var(--u) * 3.8); font-weight: 500; color: var(--dim); transition: color .15s, text-shadow .15s; }
-  .num.on { color: var(--cream); text-shadow: 0 0 calc(var(--u) * .8) rgba(123,239,181,.55); }
+  .num.on { color: var(--cream); text-shadow: 0 0 calc(var(--u) * .8) rgba(119,228,237,.55); }
   .num.hot { color: rgba(255,74,58,.45); }
   .num.hot.on { color: var(--red); text-shadow: 0 0 calc(var(--u) * .8) rgba(255,74,58,.7); }
   .tag { font-size: calc(var(--u) * 2.2); font-weight: 700; letter-spacing: .3em; color: var(--dim); }
 
-  .speed { font-size: calc(var(--u) * 42); font-weight: 500; transform: translate(-50%, -50%) skewX(-6deg); text-shadow: 0 0 calc(var(--u) * 2.5) rgba(123,239,181,.35); }
+  .speed { font-size: calc(var(--u) * 42); font-weight: 500; transform: translate(-50%, -50%) skewX(-6deg); text-shadow: 0 0 calc(var(--u) * 2.5) rgba(119,228,237,.35); }
   .unit { font-size: calc(var(--u) * 2.6); font-weight: 700; letter-spacing: .4em; color: var(--dim); }
-  .gear { font-size: calc(var(--u) * 8.6); font-weight: 600; color: var(--cream); text-shadow: 0 0 calc(var(--u) * 1.2) rgba(123,239,181,.35); }
+  .gear { font-size: calc(var(--u) * 8.6); font-weight: 600; color: var(--cream); text-shadow: 0 0 calc(var(--u) * 1.2) rgba(119,228,237,.35); }
   /* D / N / R: the current one sits in a lit box */
   .dnr { display: flex; gap: calc(var(--u) * .4); padding: calc(var(--u) * .3); border-radius: calc(var(--u) * .8); box-shadow: inset 0 0 0 1px rgba(228,220,196,.12); }
   .dnr span { width: calc(var(--u) * 3.8); text-align: center; padding: calc(var(--u) * .35) 0; border-radius: calc(var(--u) * .5); font-size: max(10px, calc(var(--u) * 2.1)); font-weight: 700; color: rgba(228,220,196,.3); }
-  .dnr span.on { color: var(--cream); box-shadow: inset 0 0 0 1px var(--mint), 0 0 calc(var(--u) * 1.2) -0.2em var(--mint); text-shadow: 0 0 calc(var(--u) * .6) rgba(123,239,181,.6); }
+  .dnr span.on { color: var(--cream); box-shadow: inset 0 0 0 1px var(--mint), 0 0 calc(var(--u) * 1.2) -0.2em var(--mint); text-shadow: 0 0 calc(var(--u) * .6) rgba(119,228,237,.6); }
   /* cruise line: icon, name and the set speed; dim while cruise is off */
   .cruise { display: flex; align-items: center; gap: .55em; font-size: max(12px, calc(var(--u) * 2.9)); font-weight: 700; letter-spacing: .14em; color: var(--mint); opacity: .3; transition: opacity .2s; }
-  .cruise.on { opacity: 1; text-shadow: 0 0 calc(var(--u) * .8) rgba(123,239,181,.5); }
+  .cruise.on { opacity: 1; text-shadow: 0 0 calc(var(--u) * .8) rgba(119,228,237,.5); }
   .cruise svg { width: 2em; height: 2em; fill: none; stroke: var(--cream); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .cruise b { margin-left: .5em; font-size: 1.9em; font-weight: 600; letter-spacing: 0; color: var(--mint); }
   .cruise small { font-size: .8em; letter-spacing: .1em; color: var(--dim); align-self: flex-end; margin-bottom: .15em; }
@@ -52,8 +52,10 @@
   .stat-cap { font-size: max(9px, calc(var(--u) * 1.7)); font-weight: 700; letter-spacing: .2em; color: var(--dim); }
   .stat-val { font-size: max(14px, calc(var(--u) * 3.7)); font-weight: 600; color: var(--cream); }
   .stat-val small { font-size: .62em; color: var(--dim); margin-left: .25em; }
-  .rule { width: 1px; height: calc(var(--u) * 7); background: rgba(228,220,196,.18); }
-  .sub { font-size: max(9px, calc(var(--u) * 1.8)); font-weight: 600; color: var(--dim); }
+  /* bottom plate row: items take their own width, 16 px either side of each divider */
+  .stats { display: flex; align-items: center; gap: 16px; }
+  .rule { flex: none; width: 1px; height: calc(var(--u) * 7); background: rgba(228,220,196,.18); }
+  .sub { font-size: max(9px, calc(var(--u) * 1.8)); font-weight: 600; letter-spacing: .04em; color: var(--dim); margin-left: .4em; }
 
   .cap { display: flex; align-items: center; gap: calc(var(--u) * 1.1); font-size: max(9px, calc(var(--u) * 1.8)); font-weight: 700; letter-spacing: .22em; color: var(--dim); }
   .cap .ico { width: calc(var(--u) * 3.2); height: calc(var(--u) * 3.2); }
@@ -63,7 +65,7 @@
 
   .blink { width: calc(var(--u) * 5); height: calc(var(--u) * 5); opacity: .14; transition: opacity .06s; }
   .blink path { fill: var(--mint); }
-  .blink.on { opacity: 1; filter: drop-shadow(0 0 calc(var(--u) * 1) rgba(123,239,181,.9)); }
+  .blink.on { opacity: 1; filter: drop-shadow(0 0 calc(var(--u) * 1) rgba(119,228,237,.9)); }
 
   /* lamps sit beside D / N / R and show only while lit */
   .tt-row { display: flex; gap: calc(var(--u) * .8); }
@@ -98,6 +100,7 @@ precision highp float;
 uniform vec2 uRes;
 uniform vec4 uBar;              // speed 0..1, rpm 0..1, cruise mark on the speed scale (-1 = none), unused
 uniform vec4 uMini;             // air, fuel, oil, water as 0..1
+uniform vec2 uMini2;            // battery, oil temperature as 0..1
 uniform highp sampler2D uField; // baked outline: arc length, signed distance (+ inside), inside flag
 uniform vec4 uFieldBox;         // local x0, y0, width, height covered by the field
 uniform float uLT;              // total arc length of the outline
@@ -105,11 +108,12 @@ uniform vec3 uEnds;             // inner start x, inner end x, inner end y (loca
 
 out vec4 outColor;
 
-const vec3 G0 = vec3(.027, .047, .035);   // #070C09
-const vec3 G1 = vec3(.039, .106, .078);   // #0A1B14
-const vec3 G2 = vec3(.055, .141, .106);   // #0E241B
-const vec3 G3 = vec3(.082, .192, .149);   // #153126 brand green
-const vec3 MINT = vec3(.48, .94, .71);
+// palette built on the brand accent #0D2426 (deep teal, hue ~185)
+const vec3 G0 = vec3(.024, .043, .047);   // #060B0C  darkest console
+const vec3 G1 = vec3(.035, .100, .106);   // #091A1B
+const vec3 G2 = vec3(.051, .141, .149);   // #0D2426  brand accent
+const vec3 G3 = vec3(.071, .192, .204);   // #123134  lit surfaces
+const vec3 MINT = vec3(.47, .89, .93);    // #77E4ED  glow, same hue
 const vec3 CREAM = vec3(.894, .863, .769); // #E4DCC4 legend cream
 const vec3 RED = vec3(1., .29, .23);
 const vec3 SATIN = vec3(.58, .63, .6);
@@ -117,6 +121,7 @@ const vec3 SATIN = vec3(.58, .63, .6);
 const float GX = .575;   // gauge origin, mirrored for the left gauge
 const float BAND = .028; // scale centre line, this far inside the outline
 const float GAP = .0035; // half width of the divider between scale sections
+const float PANEL = .158; // inner panel frame, this far inside the outline (clear of the numbers)
 
 float PX;
 float EM;   // glow amount of the current pixel
@@ -157,6 +162,12 @@ vec3 gauge(vec3 col, vec2 p, float side, float v, vec2 warn, float nMaj, float n
   float face = o.z * smoothstep(uEnds.x - .05, uEnds.x + .15, q.x);
   col = mix(col, mix(G2 * 1.05, G0 * .7, .6 - .6 * smoothstep(0., .45, sd) + .2 * (.5 - q.y)), face * .5);
 
+  // inner panel ("peninsula"): a slightly darker field whose frame runs parallel to the outline
+  // (bottom, outer side, top) and fades out on the side that faces the speed
+  float open = smoothstep(-.2, -.03, q.x) * o.z;
+  col = mix(col, G0 * .5, smoothstep(PANEL - PX, PANEL + PX, sd) * open * .42);
+  paint(col, SATIN * .55, (1. - smoothstep(.0013 - PX, .0013 + PX, abs(sd - PANEL))) * open, .12);
+
   if (sd < -.04 || sd > .13) return col;
   float t = s / uLT;
   float inS = smoothstep(-PX, PX, s) * (1. - smoothstep(uLT - PX, uLT + PX, s));
@@ -167,12 +178,13 @@ vec3 gauge(vec3 col, vec2 p, float side, float v, vec2 warn, float nMaj, float n
   float dBand = abs(sd - BAND);
   vec3 zc = zoneCol(t, warn);
 
-  // thin continuous line: the full range of the gauge, red where the warning zone is
-  float track = (1. - smoothstep(.0018 - PX, .0018 + PX, dBand)) * inS;
+  float hw = .016;   // half width of the band
+
+  // thin continuous line along the band's outer wall: the full range, red in the warning zone
+  float track = (1. - smoothstep(.0018 - PX, .0018 + PX, abs(sd - (BAND - hw - .0012)))) * inS;
   paint(col, mix(SATIN * .7, RED * .7, hot), track, .1);
 
   // solid band that fills up to the value, split only at the main sections
-  float hw = .016;
   float band = (1. - smoothstep(hw - PX, hw + PX, dBand)) * inS;
   float g = fract(t * nSec);
   float sect = smoothstep(GAP - PX, GAP + PX, min(g, 1. - g) / nSec * uLT);
@@ -237,11 +249,6 @@ float sdTrapezoid(vec2 p, float r1, float r2, float he) {
   return s * sqrt(min(dot(ca, ca), dot(cb, cb)));
 }
 
-float sdRoundBox(vec2 p, vec2 b, float r) {
-  vec2 q = abs(p) - b + r;
-  return length(max(q, 0.)) + min(max(q.x, q.y), 0.) - r;
-}
-
 float hline(vec2 p, float y, float x0, float x1) {
   return (1. - smoothstep(.0013 - PX, .0013 + PX, abs(p.y - y))) * step(x0, p.x) * step(p.x, x1);
 }
@@ -258,16 +265,14 @@ vec3 panels(vec3 col, vec2 p) {
   // top plate with DEMO / lamps, and the bottom plate with trip, odometer and average fuel
   float top = sdTrapezoid(p - vec2(0., .437), .2, .29, .046) - .008;
   col = plate(col, top, smoothstep(.39, .48, p.y));
-  float bottom = sdTrapezoid(p - vec2(0., -.385), .45, .33, .078) - .01;
-  col = plate(col, bottom, smoothstep(-.31, -.46, p.y) * .6);
-  // left card: air and fuel
-  float card = sdRoundBox(p - vec2(-.645, .06), vec2(.215, .158), .03);
-  col = mix(col, G0 * .55, (1. - smoothstep(-PX, PX, card)) * .45);
-  paint(col, SATIN * .5, 1. - smoothstep(.0012 - PX, .0012 + PX, abs(card)), .1);
-  paint(col, SATIN * .4, hline(p, .078, -.835, -.455), 0.);
-  // right side: a rule under oil pressure and coolant (red while the coolant is hot)
-  paint(col, SATIN * .5, hline(p, .075, .49, .865), .1);
-  paint(col, uMini.w > .8 ? RED * .8 : SATIN * .5, hline(p, -.076, .49, .865), uMini.w > .8 ? .5 : .1);
+  // base at y -.48, level with the bottom scale line of both gauges (outline -.492 + BAND)
+  float bottom = sdTrapezoid(p - vec2(0., -.396), .4, .3, .074) - .01;
+  col = plate(col, bottom, smoothstep(-.31, -.47, p.y) * .6);
+  // rules between the three rows on each side (the one under coolant turns red while it is hot)
+  paint(col, SATIN * .5, hline(p, .046, -.835, -.455), .1);
+  paint(col, SATIN * .5, hline(p, -.089, -.835, -.455), .1);
+  paint(col, SATIN * .5, hline(p, .046, .49, .865), .1);
+  paint(col, uMini.w > .8 ? RED * .8 : SATIN * .5, hline(p, -.089, .49, .865), uMini.w > .8 ? .5 : .1);
   // separator between the speed and the cruise line
   float fade = 1. - smoothstep(.15, .33, abs(p.x));
   paint(col, SATIN * .6, hline(p, -.172, -.33, .33) * fade, .15 * fade);
@@ -291,10 +296,12 @@ void main() {
   col = panels(col, p);
 
   // must match MINIS in JS
-  col = mini(col, p, -.79, -.49, .128, uMini.x, vec2(.4, 2.), 1.);
-  col = mini(col, p, -.79, -.49, -.006, uMini.y, vec2(.125, 2.), 0.);
-  col = mini(col, p, .56, .865, .104, uMini.z, vec2(.15, 2.), 0.);
-  col = mini(col, p, .56, .865, -.046, uMini.w, vec2(-1., .8), 0.);
+  col = mini(col, p, -.79, -.49, .093, uMini.x, vec2(.4, 2.), 1.);
+  col = mini(col, p, -.79, -.49, -.042, uMini.y, vec2(.125, 2.), 0.);
+  col = mini(col, p, -.79, -.49, -.177, uMini2.x, vec2(.3, 2.), 0.);
+  col = mini(col, p, .56, .865, .093, uMini.z, vec2(.15, 2.), 0.);
+  col = mini(col, p, .56, .865, -.042, uMini.w, vec2(-1., .8), 0.);
+  col = mini(col, p, .56, .865, -.177, uMini2.y, vec2(-1., .8), 0.);
 
   outColor = vec4(col, EM);
 }
@@ -389,9 +396,9 @@ const GX = .575;
 const CORNER_R = .24;      // soft corner radius (short edges cap it, see roundCorners)
 const CORNER_STEPS = 9;    // points per rounded corner
 const SHAPE = [
-  [-.10, -.445],   // inner end of the bottom: scale zero (leaves room for the bottom plate)
-  [ .20, -.445],   // bottom edge, level with the screen edge
-  [ .45, -.28],    // lower chamfer
+  [-.10, -.492],   // inner end of the bottom: scale zero (leaves room for the bottom plate)
+  [ .20, -.492],   // bottom edge: its scale line sits level with the base of the bottom plate
+  [ .45, -.30],    // lower chamfer
   [ .47,  .14],    // outer side, leaning in a little
   [ .40,  .36],    // upper chamfer
   [ .12,  .45],    // top edge
@@ -450,7 +457,8 @@ function bakeField() {
       for (let k = 0; k < segs.length; k++) {
         const g = segs[k], wx = x - g.ax, wy = y - g.ay;
         const hr = (wx * g.dx + wy * g.dy) / g.len2;
-        const h = Math.min(1, Math.max(0, hr));
+        const open = (k === 0 && hr < 0) || (k === segs.length - 1 && hr > 1);
+        const h = open ? hr : Math.min(1, Math.max(0, hr));
         const ex = wx - g.dx * h, ey = wy - g.dy * h, d2 = ex * ex + ey * ey;
         if (d2 < best) {
           best = d2;
@@ -484,12 +492,16 @@ const ICONS = {
   temp: "M12 3v10 M9.5 15.5a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0 M12 5h2.5 M12 8h2.5 M12 11h2.5 M3 20.5c1.5-1 3 1 4.5 0s3 1 4.5 0 3 1 4.5 0 3 1 4.5 0",
   trip: "M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z M12 7v5l3 2",
   odo: "M9 3 5 21 M15 3l4 18 M12 4v3 M12 10.5v3 M12 17v4",
+  batt: "M3 8h18v11H3z M6 8V5.5h3V8 M15 8V5.5h3V8 M6.5 13.5h3 M14.5 13.5h3 M16 12v3",
 };
+// Three rows a side, spread evenly over the height of the side panel.
 const MINIS = [
-  { id: "air",   x0: -.835, x1: -.49, y: .128, cap: "AIR", icon: "air" },
-  { id: "fuel",  x0: -.835, x1: -.49, y: -.006, cap: "FUEL", icon: "fuel" },
-  { id: "oil",   x0: .515, x1: .865, y: .104, cap: "OIL PRESSURE", icon: "oil" },
-  { id: "water", x0: .515, x1: .865, y: -.046, cap: "COOLANT TEMP", icon: "temp" },
+  { id: "air",   x0: -.835, x1: -.49, y: .093, cap: "AIR", icon: "air" },
+  { id: "fuel",  x0: -.835, x1: -.49, y: -.042, cap: "FUEL", icon: "fuel" },
+  { id: "batt",  x0: -.835, x1: -.49, y: -.177, cap: "BATTERY", icon: "batt" },
+  { id: "oil",   x0: .515, x1: .865, y: .093, cap: "OIL PRESSURE", icon: "oil" },
+  { id: "water", x0: .515, x1: .865, y: -.042, cap: "COOLANT TEMP", icon: "temp" },
+  { id: "oilt",  x0: .515, x1: .865, y: -.177, cap: "OIL TEMP", icon: "temp" },
 ];
 
 const TELLTALES = [
@@ -554,10 +566,10 @@ function buildOverlay() {
 
   const svg = (name, cls = "ico") => `<svg class="${cls}" viewBox="0 0 24 24"><path d="${ICONS[name]}"/></svg>`;
   for (const m of MINIS) {
-    addEl("cap lft", `${svg(m.icon)}<span>${m.cap}</span>`, m.x0, m.y + .042);
+    const cap = addEl("cap lft", `${svg(m.icon)}<span>${m.cap}</span>`, m.x0, m.y + .042);
+    if (m.id === "fuel") ui.range = cap.appendChild(Object.assign(document.createElement("span"), { className: "sub" }));
     ui[m.id] = addEl("val rgt", "", m.x1, m.y + .042);
   }
-  ui.range = addEl("sub lft", "", -.835 + .052, -.052);
 
   // centre: gear with blinkers and D / N / R, speed, cruise line
   const arrow = d => `<svg class="blink" viewBox="0 0 24 24"><path d="${d}"/></svg>`;
@@ -573,12 +585,9 @@ function buildOverlay() {
   ui.cruiseSet = ui.cruise.querySelector("b");
 
   // bottom plate: trip, odometer, average fuel
-  const stat = (icon, cap) => `${svg(icon)}<div><div class="stat-cap">${cap}</div><div class="stat-val"></div></div>`;
-  ui.trip = addEl("stat", stat("trip", "TRIP"), -.215, -.385).querySelector(".stat-val");
-  addEl("rule", "", -.108, -.385);
-  ui.odo = addEl("stat", stat("odo", "ODO"), 0, -.385).querySelector(".stat-val");
-  addEl("rule", "", .108, -.385);
-  ui.mpg = addEl("stat", stat("fuel", "AVG FUEL"), .215, -.385).querySelector(".stat-val");
+  const stat = (icon, cap) => `<div class="stat">${svg(icon)}<div><div class="stat-cap">${cap}</div><div class="stat-val"></div></div></div>`;
+  const stats = addEl("stats", [stat("trip", "TRIP"), stat("odo", "ODO"), stat("fuel", "AVG FUEL")].join('<div class="rule"></div>'), 0, -.396);
+  [ui.trip, ui.odo, ui.mpg] = stats.querySelectorAll(".stat-val");
 
   // lamps that are lit, either side of D / N / R
   const rows = { lft: addEl("tt-row lft", "", -.1, .345), rgt: addEl("tt-row rgt", "", .1, .345) };
@@ -712,6 +721,7 @@ function render(g, now, boot) {
   gl.uniform2f(g.scene.u("uRes"), scene.w, scene.h);
   gl.uniform4f(g.scene.u("uBar"), smooth.speed, smooth.rpm, sim.cruise ? sim.cruiseSet / 90 : -1, 0);
   gl.uniform4f(g.scene.u("uMini"), smooth.air, smooth.fuel, smooth.oil, smooth.water);
+  gl.uniform2f(g.scene.u("uMini2"), smooth.batt, smooth.oilt);
   drawTo(gl, scene);
 
   gl.useProgram(g.down.prog);
@@ -759,7 +769,7 @@ const sim = {
   t: 0, phase: "idle", phaseT: 0, mph: 0, gear: 0, rpm: IDLE, shift: 0,
   air1: 112, compressor: true, fuel: .62, oil: 32, water: 150,
   brake: false, jake: false, cruise: false, cruiseSet: 0, left: false, right: false,
-  park: true, diff: false, beam: false, odo: 482317.4, trip: 0, mpg: 6.8,
+  park: true, diff: false, beam: false, odo: 482317.4, trip: 0, mpg: 6.8, batt: 13.9, oilt: 150,
 };
 
 function setPhase(name) { sim.phase = name; sim.phaseT = 0; }
@@ -805,6 +815,7 @@ function stepSim(dt) {
   s.oil = 18 + s.rpm * .022;
   s.park = s.gear === 0 && s.mph < .5;
   s.water += (192 - s.water) * dt * .04;
+  s.oilt += (215 - s.oilt) * dt * .03;
   s.fuel = Math.max(0, s.fuel - dt * .0004);
   s.odo += s.mph * dt / 3600;
   s.trip += s.mph * dt / 3600;
@@ -815,6 +826,7 @@ function gaugeValues(s) {
   return {
     speed: s.mph / 90, rpm: s.rpm / 2500, air: s.air1 / 150,
     fuel: s.fuel, oil: s.oil / 100, water: (s.water - 100) / 150,
+    batt: (s.batt - 10) / 5, oilt: (s.oilt - 100) / 200,   // 10-15 V, 100-300 F
   };
 }
 
@@ -831,6 +843,7 @@ function applyLive(m) {
     left: m.blinker_left, right: m.blinker_right, park: m.park_brake, jake: m.engine_brake,
     diff: m.diff_lock, beam: m.high_beam,
     odo: m.odometer_mi, trip: m.trip_mi, mpg: m.avg_mpg, range: m.range_mi,
+    batt: m.battery_v, oilt: m.oil_temp_f,
   });
   liveAt = performance.now();
 }
@@ -855,7 +868,7 @@ function connectLive() {
 const SMOOTH_LIVE = 40;
 const SMOOTH_DEMO = 10;
 const BOOT_SECONDS = 2.4;   // self-test sweep on key-on
-const smooth = { speed: 0, rpm: 0, air: 0, fuel: 0, oil: 0, water: 0 };
+const smooth = { speed: 0, rpm: 0, air: 0, fuel: 0, oil: 0, water: 0, batt: 0, oilt: 0 };
 
 function setText(el, text) { if (el.textContent !== text) el.textContent = text; }
 function setHtml(el, html) { if (el.innerHTML !== html) el.innerHTML = html; }
@@ -870,6 +883,10 @@ function updateOverlay(ui, s, shown, booting, now) {
   setHtml(ui.air, `${Math.round(s.air1)}<small>PSI</small>`);
   setText(ui.fuel, Math.round(s.fuel * 100) + "%");
   setText(ui.range, s.range ? `~ ${Math.round(s.range).toLocaleString("en-US")} mi` : "");
+  setHtml(ui.batt, `${s.batt.toFixed(1)}<small>V</small>`);
+  setText(ui.oilt, Math.round(s.oilt) + "°F");
+  ui.batt.classList.toggle("hot", s.batt < 11.5);
+  ui.oilt.classList.toggle("hot", s.oilt > 260);
   setHtml(ui.oil, `${Math.round(s.oil)}<small>PSI</small>`);
   setText(ui.water, Math.round(s.water) + "°F");
   setHtml(ui.trip, `${s.trip.toFixed(1)}<small>mi</small>`);
