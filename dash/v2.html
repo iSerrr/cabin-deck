@@ -17,13 +17,13 @@
   html, body { margin: 0; height: 100%; background: #04090A; overflow: hidden; }
   /* overlay mode (?overlay): transparent page over the game; text gets a dark edge so it reads on a bright road */
   html.overlay, html.overlay body { background: transparent; }
-  html.overlay body.edit #stage { outline: none; }
   html.shaped .demo { display: none; }   /* it sits above the silhouette */
   html.overlay .ov { filter: drop-shadow(0 1px 2px rgba(0,0,0,.85)); }
-  /* overlay edit mode, toggled by the overlay app: drag to move, wheel to resize */
-  body.edit { -webkit-app-region: drag; cursor: move; }
+  /* overlay edit mode, toggled by the overlay app: drag to move, wheel or +/- to resize, arrows to nudge.
+     Dragging is done in script, not with -webkit-app-region: on Windows a drag region swallows the wheel. */
+  body.edit { cursor: move; }
   body.edit #stage { outline: 2px dashed var(--mint); outline-offset: -2px; }
-  body.edit::after { content: "DRAG TO MOVE · WHEEL TO RESIZE · CTRL+SHIFT+F10 TO SAVE"; position: fixed; left: 50%; top: 8px; transform: translateX(-50%); padding: 4px 10px; border-radius: 6px; background: rgba(4,9,10,.85); color: var(--mint); font: 700 11px/1 sans-serif; letter-spacing: .12em; }
+  body.edit::after { content: "DRAG TO MOVE · WHEEL OR +/− TO RESIZE · ARROWS TO NUDGE · CTRL+SHIFT+F10 TO SAVE"; position: fixed; left: 50%; top: 8px; transform: translateX(-50%); padding: 4px 10px; border-radius: 6px; background: rgba(4,9,10,.85); color: var(--mint); font: 700 11px/1 sans-serif; letter-spacing: .12em; }
   body {
     display: flex; align-items: center; justify-content: center;
     font-family: "Saira Semi Condensed", "Arial Narrow", sans-serif; color: var(--cream);
@@ -1069,9 +1069,27 @@ document.addEventListener("click", async () => {
   }
 });
 
-addEventListener("wheel", (e) => {
-  if (window.overlayApi && document.body.classList.contains("edit")) window.overlayApi.resize(e.deltaY < 0 ? 1 : -1);
-});
+// Overlay app, edit mode: the wheel resizes the window, a held mouse button drags it. The pointer
+// is captured, so the drag keeps going even when the cursor runs ahead of the window.
+if (window.overlayApi) {
+  const editing = () => document.body.classList.contains("edit");
+  let drag = null;
+  addEventListener("wheel", (e) => { if (editing()) window.overlayApi.resize(e.deltaY < 0 ? 1 : -1); });
+  addEventListener("pointerdown", (e) => {
+    if (!editing() || e.button !== 0) return;
+    drag = { x: e.screenX, y: e.screenY };
+    document.body.setPointerCapture(e.pointerId);
+  });
+  addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = e.screenX - drag.x, dy = e.screenY - drag.y;
+    if (!dx && !dy) return;
+    window.overlayApi.move(dx, dy);
+    drag = { x: e.screenX, y: e.screenY };
+  });
+  addEventListener("pointerup", () => { drag = null; });
+  addEventListener("pointercancel", () => { drag = null; });
+}
 
 try {
   start();
