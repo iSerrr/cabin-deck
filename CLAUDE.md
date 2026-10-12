@@ -30,6 +30,8 @@ so American Truck Simulator (or ETS2) sees them as a separate game controller.
 ## Tech stack
 - Python 3.10+, FastAPI + uvicorn, `pyvjoy` (Windows only, imported lazily).
 - Panel: a single `static/index.html` with plain HTML/CSS/JS.
+- Dash: `dash/index.html` (v1) and `dash/v2.html` (v2, WebGL2) on ports 8701/8702.
+- Overlay: `overlay/` is an Electron app (Node 18+) that shows dash v2 over the game.
 
 ## Code conventions
 - Small single-purpose functions with type hints.

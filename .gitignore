@@ -17,3 +17,7 @@ Thumbs.db
 
 # Server logs
 logs/
+
+# Overlay app (Electron)
+overlay/node_modules/
+overlay/overlay.json

@@ -652,6 +652,7 @@ def compute_dash(data: dict[str, Any], trip_mi: float = 0.0) -> dict[str, Any]:
         "battery_v": round(float(data.get("batteryVoltage") or 0.0), 1),
         "cruise": bool(data.get("cruiseControl")),
         "cruise_mph": round(float(data.get("cruiseControlSpeed") or 0.0) * MS_TO_MPH),
+        "speed_limit_mph": round(float(data.get("speedLimit") or 0.0) * MS_TO_MPH),   # 0 = none known
         "blinker_left": bool(data.get("blinkerLeftOn")),
         "blinker_right": bool(data.get("blinkerRightOn")),
         "park_brake": bool(data.get("parkBrake")),

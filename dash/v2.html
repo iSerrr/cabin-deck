@@ -15,6 +15,13 @@
      Live data comes from server.py over /ws/dash; without the game it runs a demo drive. */
   :root { --cream: #E4DCC4; --mint: #77E4ED; --amber: #FFB547; --red: #FF4A3A; --blue: #6FB6FF; --dim: rgba(228,220,196,.28); }
   html, body { margin: 0; height: 100%; background: #04090A; overflow: hidden; }
+  /* overlay mode (?overlay): transparent page over the game; text gets a dark edge so it reads on a bright road */
+  html.overlay, html.overlay body { background: transparent; }
+  html.overlay .ov { filter: drop-shadow(0 1px 2px rgba(0,0,0,.85)); }
+  /* overlay edit mode, toggled by the overlay app: drag to move, wheel to resize */
+  body.edit { -webkit-app-region: drag; cursor: move; }
+  body.edit #stage { outline: 2px dashed var(--mint); outline-offset: -2px; }
+  body.edit::after { content: "DRAG TO MOVE · WHEEL TO RESIZE · CTRL+SHIFT+F10 TO SAVE"; position: fixed; left: 50%; top: 8px; transform: translateX(-50%); padding: 4px 10px; border-radius: 6px; background: rgba(4,9,10,.85); color: var(--mint); font: 700 11px/1 sans-serif; letter-spacing: .12em; }
   body {
     display: flex; align-items: center; justify-content: center;
     font-family: "Saira Semi Condensed", "Arial Narrow", sans-serif; color: var(--cream);
@@ -55,6 +62,17 @@
   /* bottom plate row: items take their own width, 16 px either side of each divider */
   .stats { display: flex; align-items: center; gap: 16px; }
   .rule { flex: none; width: 1px; height: calc(var(--u) * 7); background: rgba(228,220,196,.18); }
+  /* US speed limit sign: black on white, shown only while the game knows the limit */
+  .limit {
+    display: none; flex-direction: column; align-items: center; padding: calc(var(--u) * .6) calc(var(--u) * .9) calc(var(--u) * .3);
+    border-radius: calc(var(--u) * .7); background: #F2F0EA; color: #111;
+    box-shadow: inset 0 0 0 calc(var(--u) * .3) #F2F0EA, inset 0 0 0 calc(var(--u) * .55) #111;
+    font-weight: 800; line-height: 1; transition: box-shadow .2s;
+  }
+  .limit.on { display: flex; }
+  .limit span { font-size: max(7px, calc(var(--u) * 1.25)); letter-spacing: .06em; }
+  .limit b { font-size: calc(var(--u) * 5.4); font-weight: 800; margin-top: calc(var(--u) * .2); }
+  .limit.over { box-shadow: inset 0 0 0 calc(var(--u) * .3) #F2F0EA, inset 0 0 0 calc(var(--u) * .55) #111, 0 0 0 calc(var(--u) * .35) var(--red), 0 0 calc(var(--u) * 2.4) var(--red); }
   .sub { font-size: max(9px, calc(var(--u) * 1.8)); font-weight: 600; letter-spacing: .04em; color: var(--dim); margin-left: .4em; }
 
   .cap { display: flex; align-items: center; gap: calc(var(--u) * 1.1); font-size: max(9px, calc(var(--u) * 1.8)); font-weight: 700; letter-spacing: .22em; color: var(--dim); }
@@ -98,15 +116,17 @@ void main() {
 precision highp float;
 
 uniform vec2 uRes;
-uniform vec4 uBar;              // speed 0..1, rpm 0..1, cruise mark on the speed scale (-1 = none), unused
+uniform vec4 uBar;              // speed 0..1, rpm 0..1, cruise mark, speed limit on the speed scale (-1 = none)
 uniform vec4 uMini;             // air, fuel, oil, water as 0..1
 uniform vec2 uMini2;            // battery, oil temperature as 0..1
 uniform highp sampler2D uField; // baked outline: arc length, signed distance (+ inside), inside flag
 uniform vec4 uFieldBox;         // local x0, y0, width, height covered by the field
 uniform float uLT;              // total arc length of the outline
 uniform vec3 uEnds;             // inner start x, inner end x, inner end y (local)
+uniform float uOverlay;         // 1 when drawn over the game: no console background
 
-out vec4 outColor;
+layout(location = 0) out vec4 outColor;   // colour, alpha = glow amount for the bloom
+layout(location = 1) out vec4 outCover;   // how opaque the pixel is, for the transparent overlay
 
 // palette built on the brand accent #0D2426 (deep teal, hue ~185)
 const vec3 G0 = vec3(.024, .043, .047);   // #060B0C  darkest console
@@ -116,6 +136,9 @@ const vec3 G3 = vec3(.071, .192, .204);   // #123134  lit surfaces
 const vec3 MINT = vec3(.47, .89, .93);    // #77E4ED  glow, same hue
 const vec3 CREAM = vec3(.894, .863, .769); // #E4DCC4 legend cream
 const vec3 RED = vec3(1., .29, .23);
+const vec3 BLUE = vec3(.33, .62, 1.);
+// tachometer: the diesel's working band, where to hold the engine and shift (rpm / 2500)
+const vec2 ECO = vec2(1100. / 2500., 1500. / 2500.);
 const vec3 SATIN = vec3(.58, .63, .6);
 
 const float GX = .575;   // gauge origin, mirrored for the left gauge
@@ -125,10 +148,14 @@ const float PANEL = .158; // inner panel frame, this far inside the outline (cle
 
 float PX;
 float EM;   // glow amount of the current pixel
+float COV;  // coverage of the current pixel (overlay mode)
+
+void cover(float m) { COV = max(COV, m); }
 
 void paint(inout vec3 col, vec3 c, float m, float glow) {
   col = mix(col, c, m);
   EM = mix(EM, glow, m);
+  cover(m);
 }
 
 bool isHot(float t, vec2 warn) { return t < warn.x || t > warn.y; }
@@ -153,7 +180,8 @@ vec3 field(vec2 q) {
 }
 
 // boldMin: 0 = fine minor ticks, 1 = few bold ones (the half-way marks on the speedometer)
-vec3 gauge(vec3 col, vec2 p, float side, float v, vec2 warn, float nMaj, float nMin, float nSec, float mark, float boldMin) {
+// ceil: the speed limit as a red "ceiling" mark (-1 = none); eco: a blue band range (-1 = none)
+vec3 gauge(vec3 col, vec2 p, float side, float v, vec2 warn, float nMaj, float nMin, float nSec, float mark, float boldMin, float ceil, vec2 eco) {
   vec2 q = vec2((p.x - side * GX) * side, p.y);
   vec3 o = field(q);
   float s = o.x, sd = o.y;
@@ -161,11 +189,13 @@ vec3 gauge(vec3 col, vec2 p, float side, float v, vec2 warn, float nMaj, float n
   // the gauge face: a soft panel that fades out towards the open centre side
   float face = o.z * smoothstep(uEnds.x - .05, uEnds.x + .15, q.x);
   col = mix(col, mix(G2 * 1.05, G0 * .7, .6 - .6 * smoothstep(0., .45, sd) + .2 * (.5 - q.y)), face * .5);
+  cover(face * .3);
 
   // inner panel ("peninsula"): a slightly darker field whose frame runs parallel to the outline
   // (bottom, outer side, top) and fades out on the side that faces the speed
   float open = smoothstep(-.2, -.03, q.x) * o.z;
   col = mix(col, G0 * .5, smoothstep(PANEL - PX, PANEL + PX, sd) * open * .42);
+  cover(smoothstep(PANEL - PX, PANEL + PX, sd) * open * .5);
   paint(col, SATIN * .55, (1. - smoothstep(.0013 - PX, .0013 + PX, abs(sd - PANEL))) * open, .12);
 
   if (sd < -.04 || sd > .13) return col;
@@ -177,12 +207,13 @@ vec3 gauge(vec3 col, vec2 p, float side, float v, vec2 warn, float nMaj, float n
   float lit = 1. - smoothstep(sv - .002, sv + .002, s);
   float dBand = abs(sd - BAND);
   vec3 zc = zoneCol(t, warn);
+  float inEco = step(eco.x, t) * step(t, eco.y) * (1. - hot);
 
   float hw = .016;   // half width of the band
 
   // thin continuous line along the band's outer wall: the full range, red in the warning zone
   float track = (1. - smoothstep(.0018 - PX, .0018 + PX, abs(sd - (BAND - hw - .0012)))) * inS;
-  paint(col, mix(SATIN * .7, RED * .7, hot), track, .1);
+  paint(col, mix(mix(SATIN * .7, BLUE * .8, inEco), RED * .7, hot), track, .1);
 
   // solid band that fills up to the value, split only at the main sections
   float band = (1. - smoothstep(hw - PX, hw + PX, dBand)) * inS;
@@ -190,10 +221,19 @@ vec3 gauge(vec3 col, vec2 p, float side, float v, vec2 warn, float nMaj, float n
   float sect = smoothstep(GAP - PX, GAP + PX, min(g, 1. - g) / nSec * uLT);
   float across = clamp((sd - BAND) / hw * .5 + .5, 0., 1.);      // 0 on the outer edge, 1 on the inner
   // kept below the tone curve's knee so the mint stays saturated; the bloom adds the light
-  vec3 litCol = hot > .5 && !isHot(v, warn) ? RED * .45 : zc * .9;
+  vec3 litCol = hot > .5 && !isHot(v, warn) ? RED * .45 : mix(zc * .9, BLUE, inEco);
   litCol *= mix(.7, 1.05, smoothstep(sv - .7, sv, s)) * (1.05 - .35 * across);
-  paint(col, G3 * 1.1, band * sect * (1. - lit) * .35, 0.);
+  // the part still to fill is tinted red past the limit or redline, blue in the working band
+  vec3 offCol = mix(mix(G3 * 1.1, BLUE * .45, inEco), RED * .5, hot);
+  paint(col, offCol, band * sect * (1. - lit) * mix(.35, .45, max(hot, inEco)), 0.);
   paint(col, litCol, band * sect * lit, .7);
+
+  // speed limit: a red bar across the band, the "ceiling" the fill runs into
+  if (ceil >= 0.) {
+    float dc = abs(s - ceil * uLT);
+    float across3 = 1. - smoothstep(hw + .006 - PX, hw + .006 + PX, dBand);
+    paint(col, RED * 1.1, (1. - smoothstep(.003 - PX, .003 + PX, dc)) * across3 * inS, .9);
+  }
 
   // ticks on the inside
   float dMaj = abs(fract(t * nMaj + .5) - .5) / nMaj * uLT;
@@ -220,22 +260,35 @@ vec3 gauge(vec3 col, vec2 p, float side, float v, vec2 warn, float nMaj, float n
   return col;
 }
 
-// solid: one continuous bar (air) instead of segments
-vec3 mini(vec3 col, vec2 p, float x0, float x1, float y, float v, vec2 warn, float solid) {
-  float u = (p.x - x0) / (x1 - x0);
-  float dy = abs(p.y - y);
-  if (u < -.05 || u > 1.05 || dy > .03) return col;
-  float inU = step(0., u) * step(u, 1.);
-  float band = (1. - smoothstep(.007 - PX, .007 + PX, dy)) * inU;
-  float g = fract(u * 24.);
-  float seg = mix(smoothstep(0., .1, g) * (1. - smoothstep(.72, .82, g)), 1., solid);
-  float hot = isHot(u, warn) ? 1. : 0.;
-  float lit = 1. - smoothstep(v - .003, v + .003, u);
-  vec3 off = mix(G3 * 1.6, RED * .25, hot * (1. - solid));
-  // a solid bar is all mint and turns red only when the value itself is in the warning zone
-  vec3 litCol = isHot(v, warn) ? RED : hot > .5 && solid < .5 ? RED * .4 : MINT * .95;
-  paint(col, off, band * seg * (1. - lit), 0.);
-  paint(col, litCol, band * seg * lit, .5);
+// Readout bar: a thin rounded track, a fill that brightens towards its head, a lit head at the
+// value, quarter marks, and the warning zone as a thin red rule under the track. The whole fill
+// turns red only while the value itself is in the warning zone.
+vec3 mini(vec3 col, vec2 p, float x0, float x1, float y, float v, vec2 warn) {
+  float w = x1 - x0;
+  float u = (p.x - x0) / w;
+  float dy = p.y - y;
+  if (u < -.05 || u > 1.05 || abs(dy) > .03) return col;
+  const float R = .0045;   // track half height
+  vec3 tone = isHot(v, warn) ? RED : MINT;
+  float on = step(.001, v);
+
+  float dTrack = length(vec2(p.x - clamp(p.x, x0 + R, x1 - R), dy)) - R;
+  paint(col, G3 * 1.25, 1. - smoothstep(-PX, PX, dTrack), 0.);
+
+  float vx = x0 + clamp(v, 0., 1.) * w;
+  float dFill = length(vec2(p.x - clamp(p.x, x0 + R, max(x0 + R, vx - R)), dy)) - R;
+  float ramp = smoothstep(0., max(v, .001), u);   // 0 at the start, 1 at the head
+  paint(col, tone * mix(.45, 1.05, ramp), (1. - smoothstep(-PX, PX, dFill)) * on, mix(.15, .7, ramp));
+
+  float dHead = length(vec2(p.x - vx, dy)) - R * 1.7;
+  paint(col, mix(tone, CREAM, .35) * 1.1, (1. - smoothstep(-PX, PX, dHead)) * on, 1.);
+
+  float q = abs(fract(u * 4. + .5) - .5) / 4. * w;
+  float marks = (1. - smoothstep(.0011 - PX, .0011 + PX, q)) * step(.009, -dy) * step(-dy, .014) * step(.2, u) * step(u, .8);
+  paint(col, SATIN * .45, marks, 0.);
+
+  float zone = (isHot(u, warn) ? 1. : 0.) * step(0., u) * step(u, 1.);
+  paint(col, RED * .75, (1. - smoothstep(.0012 - PX, .0012 + PX, abs(dy + .0105))) * zone, .25);
   return col;
 }
 
@@ -257,6 +310,7 @@ float hline(vec2 p, float y, float x0, float x1) {
 vec3 plate(vec3 col, float d, float shade) {
   col *= 1. - .35 * (1. - smoothstep(0., .03, d)) * step(0., d);
   col = mix(col, mix(G2 * 1.1, G0 * .8, shade), (1. - smoothstep(-PX, PX, d)) * .85);
+  cover((1. - smoothstep(-PX, PX, d)) * .7);
   paint(col, SATIN * .75, 1. - smoothstep(.0014 - PX, .0014 + PX, abs(d)), .22);
   return col;
 }
@@ -282,28 +336,33 @@ vec3 panels(vec3 col, vec2 p) {
 void main() {
   PX = 1. / uRes.y;
   EM = 0.;
+  COV = 0.;
   vec2 p = (gl_FragCoord.xy - .5 * uRes) / uRes.y;
 
-  // console: deep green, fine brushed lines, soft light behind the centre
+  // console: deep green, fine brushed lines, soft light behind the centre (none over the game)
   vec3 col = mix(G1, G0, smoothstep(0., .9, length(p - vec2(0., .35))));
   col *= .94 + .06 * sin(p.y * 900.);
   col += G3 * .5 * exp(-length(p * vec2(.6, 1.)) * 2.5);
+  col *= 1. - uOverlay;
 
   // speedometer: numbers every 10 mph, one bold mark at each 5 between them
-  col = gauge(col, p, -1., uBar.x, vec2(-1., 2.), 9., 18., 9., uBar.z, 1.);
-  col = gauge(col, p, 1., uBar.y, vec2(-1., .84), 5., 25., 10., -1., 0.);
+  // with a known speed limit, everything above it becomes the warning zone
+  float limit = uBar.w;
+  col = gauge(col, p, -1., uBar.x, vec2(-1., limit >= 0. ? limit : 2.), 9., 18., 9., uBar.z, 1., limit, vec2(-1.));
+  col = gauge(col, p, 1., uBar.y, vec2(-1., .84), 5., 25., 10., -1., 0., -1., ECO);
 
   col = panels(col, p);
 
   // must match MINIS in JS
-  col = mini(col, p, -.79, -.49, .093, uMini.x, vec2(.4, 2.), 1.);
-  col = mini(col, p, -.79, -.49, -.042, uMini.y, vec2(.125, 2.), 0.);
-  col = mini(col, p, -.79, -.49, -.177, uMini2.x, vec2(.3, 2.), 0.);
-  col = mini(col, p, .56, .865, .093, uMini.z, vec2(.15, 2.), 0.);
-  col = mini(col, p, .56, .865, -.042, uMini.w, vec2(-1., .8), 0.);
-  col = mini(col, p, .56, .865, -.177, uMini2.y, vec2(-1., .8), 0.);
+  col = mini(col, p, -.79, -.49, .093, uMini.x, vec2(.4, 2.));
+  col = mini(col, p, -.79, -.49, -.042, uMini.y, vec2(.125, 2.));
+  col = mini(col, p, -.79, -.49, -.177, uMini2.x, vec2(.3, 2.));
+  col = mini(col, p, .56, .865, .093, uMini.z, vec2(.15, 2.));
+  col = mini(col, p, .56, .865, -.042, uMini.w, vec2(-1., .8));
+  col = mini(col, p, .56, .865, -.177, uMini2.y, vec2(-1., .8));
 
   outColor = vec4(col, EM);
+  outCover = vec4(COV, 0., 0., 1.);
 }
 </script>
 
@@ -356,6 +415,8 @@ void main() {
 precision highp float;
 uniform sampler2D uScene;
 uniform sampler2D uBloom;
+uniform sampler2D uCover;
+uniform float uOverlay;
 uniform float uBloomK;
 uniform vec2 uRes;
 uniform float uTime;
@@ -372,8 +433,14 @@ vec3 softClip(vec3 x) {
 }
 
 void main() {
-  vec3 c = texture(uScene, vUv).rgb + texture(uBloom, vUv).rgb * uBloomK;
-  c = softClip(c);
+  vec3 b = texture(uBloom, vUv).rgb * uBloomK;
+  vec3 c = softClip(texture(uScene, vUv).rgb + b);
+  if (uOverlay > .5) {
+    // premultiplied over transparency: drawn parts by their coverage, the bloom by its own light
+    float a = clamp(max(texture(uCover, vUv).r, max(b.r, max(b.g, b.b)) * 1.1), 0., 1.);
+    outColor = vec4(min(c, vec3(a)), a);
+    return;
+  }
   vec2 p = (gl_FragCoord.xy - .5 * uRes) / uRes.y;
   c *= 1. - .2 * smoothstep(.5, 1.25, length(p * vec2(.85, 1.4)));
   c += (hash(gl_FragCoord.xy + fract(uTime) * 100.) - .5) * 2. / 255.;
@@ -384,7 +451,9 @@ void main() {
 <script>
 "use strict";
 
-const ASPECT = 2.17;          // Galaxy S26 in landscape (≈ 19.5:9)
+const ASPECT = 2.17;
+const OVERLAY = new URLSearchParams(location.search).has("overlay");   // drawn over the game by the overlay app
+if (OVERLAY) document.documentElement.classList.add("overlay");          // Galaxy S26 in landscape (≈ 19.5:9)
 const MAX_DPR = 2;            // cap render resolution to keep the shader cheap
 const BLOOM_LEVELS = 6;       // each level halves the size: wider, softer glow
 const BLOOM_STRENGTH = .45;
@@ -580,6 +649,8 @@ function buildOverlay() {
   ui.dnr = addEl("dnr", "<span>D</span><span>N</span><span>R</span>", 0, .345);
   ui.demo = addEl("demo", "", 0, .297);
   ui.speed = addEl("speed", "0", 0, .075);
+  ui.limit = addEl("limit", "<span>SPEED</span><span>LIMIT</span><b></b>", .325, .085);
+  ui.limitVal = ui.limit.querySelector("b");
   addEl("unit", "MPH", 0, -.125);
   ui.cruise = addEl("cruise", `<svg viewBox="0 0 24 24"><path d="M4.5 17a8 8 0 1 1 15 0"/><path d="M12 15.5l4-5.5"/><path d="M7 9.2l1 1M12 6.5v1.4M17 9.2l-1 1"/><path d="M5 21h6l-2-2.5" /></svg><span>CRUISE CONTROL</span><b></b><small>MPH</small>`, 0, -.228);
   ui.cruiseSet = ui.cruise.querySelector("b");
@@ -635,28 +706,41 @@ function makeProgram(gl, fragId) {
   return { prog, u: name => cache[name] ??= gl.getUniformLocation(prog, name) };
 }
 
-function makeTarget(gl, fmt, w, h) {
+function makeTexture(gl, internal, type, w, h) {
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, fmt.internal, w, h, 0, gl.RGBA, fmt.type, null);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, gl.RGBA, type, null);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return tex;
+}
+
+// withCover: a second 8-bit attachment that the scene pass fills with coverage (overlay alpha)
+function makeTarget(gl, fmt, w, h, withCover = false) {
+  const tex = makeTexture(gl, fmt.internal, fmt.type, w, h);
   const fb = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  let cover = null;
+  if (withCover) {
+    cover = makeTexture(gl, gl.RGBA8, gl.UNSIGNED_BYTE, w, h);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, cover, 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  }
   if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error("Render target is not supported.");
-  return { tex, fb, w, h };
+  return { tex, cover, fb, w, h };
 }
 
 function freeTarget(gl, t) {
   gl.deleteTexture(t.tex);
+  if (t.cover) gl.deleteTexture(t.cover);
   gl.deleteFramebuffer(t.fb);
 }
 
 function initGL() {
-  const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, depth: false, powerPreference: "high-performance" });
+  const gl = canvas.getContext("webgl2", { antialias: false, alpha: OVERLAY, depth: false, powerPreference: "high-performance" });
   if (!gl) throw new Error("WebGL2 is not available in this browser.");
   // Half-float targets keep values above 1 for the bloom; plain 8-bit still works, just clips.
   const hdr = gl.getExtension("EXT_color_buffer_float") || gl.getExtension("EXT_color_buffer_half_float");
@@ -696,7 +780,7 @@ function ensureTargets(g) {
   if (g.targets) [g.targets.scene, ...g.targets.levels].forEach(t => freeTarget(gl, t));
   const levels = [];
   for (let i = 1; i <= BLOOM_LEVELS; i++) levels.push(makeTarget(gl, g.fmt, Math.max(1, w >> i), Math.max(1, h >> i)));
-  g.targets = { scene: makeTarget(gl, g.fmt, w, h), levels };
+  g.targets = { scene: makeTarget(gl, g.fmt, w, h, true), levels };
   return g.targets;
 }
 
@@ -719,9 +803,10 @@ function render(g, now, boot) {
   bindTex(gl, 0, g.field);
   gl.uniform1i(g.scene.u("uField"), 0);
   gl.uniform2f(g.scene.u("uRes"), scene.w, scene.h);
-  gl.uniform4f(g.scene.u("uBar"), smooth.speed, smooth.rpm, sim.cruise ? sim.cruiseSet / 90 : -1, 0);
+  gl.uniform4f(g.scene.u("uBar"), smooth.speed, smooth.rpm, sim.cruise ? sim.cruiseSet / 90 : -1, sim.limit > 0 ? sim.limit / 90 : -1);
   gl.uniform4f(g.scene.u("uMini"), smooth.air, smooth.fuel, smooth.oil, smooth.water);
   gl.uniform2f(g.scene.u("uMini2"), smooth.batt, smooth.oilt);
+  gl.uniform1f(g.scene.u("uOverlay"), OVERLAY ? 1 : 0);
   drawTo(gl, scene);
 
   gl.useProgram(g.down.prog);
@@ -752,6 +837,9 @@ function render(g, now, boot) {
   bindTex(gl, 1, levels[0].tex);
   gl.uniform1i(g.comp.u("uScene"), 0);
   gl.uniform1i(g.comp.u("uBloom"), 1);
+  bindTex(gl, 2, scene.cover);
+  gl.uniform1i(g.comp.u("uCover"), 2);
+  gl.uniform1f(g.comp.u("uOverlay"), OVERLAY ? 1 : 0);
   gl.uniform1f(g.comp.u("uBloomK"), BLOOM_STRENGTH * boot);
   gl.uniform2f(g.comp.u("uRes"), canvas.width, canvas.height);
   gl.uniform1f(g.comp.u("uTime"), now);
@@ -769,7 +857,7 @@ const sim = {
   t: 0, phase: "idle", phaseT: 0, mph: 0, gear: 0, rpm: IDLE, shift: 0,
   air1: 112, compressor: true, fuel: .62, oil: 32, water: 150,
   brake: false, jake: false, cruise: false, cruiseSet: 0, left: false, right: false,
-  park: true, diff: false, beam: false, odo: 482317.4, trip: 0, mpg: 6.8, batt: 13.9, oilt: 150,
+  park: true, diff: false, beam: false, odo: 482317.4, trip: 0, mpg: 6.8, batt: 13.9, oilt: 150, limit: 65,
 };
 
 function setPhase(name) { sim.phase = name; sim.phaseT = 0; }
@@ -843,7 +931,7 @@ function applyLive(m) {
     left: m.blinker_left, right: m.blinker_right, park: m.park_brake, jake: m.engine_brake,
     diff: m.diff_lock, beam: m.high_beam,
     odo: m.odometer_mi, trip: m.trip_mi, mpg: m.avg_mpg, range: m.range_mi,
-    batt: m.battery_v, oilt: m.oil_temp_f,
+    batt: m.battery_v, oilt: m.oil_temp_f, limit: m.speed_limit_mph,
   });
   liveAt = performance.now();
 }
@@ -875,6 +963,12 @@ function setHtml(el, html) { if (el.innerHTML !== html) el.innerHTML = html; }
 
 function updateOverlay(ui, s, shown, booting, now) {
   setText(ui.speed, String(Math.round(s.mph)));
+  // the sign flares red once the speed is over the limit by more than a mile an hour
+  setText(ui.limitVal, String(s.limit || ""));
+  ui.limit.classList.toggle("on", s.limit > 0);
+  ui.limit.classList.toggle("over", s.limit > 0 && s.mph > s.limit + 1);
+  // speed numbers above the limit read red, like the scale behind them
+  for (const n of ui.nums.speed) n.el.classList.toggle("hot", s.limit > 0 && n.t * 90 > s.limit + .5);
   setText(ui.gear, s.gear === 0 ? "N" : s.gear < 0 ? "R" : String(s.gear));
   const range = s.gear > 0 ? 0 : s.gear === 0 ? 1 : 2;
   [...ui.dnr.children].forEach((el, i) => el.classList.toggle("on", i === range));
@@ -941,12 +1035,17 @@ function start() {
 
 // Tap anywhere: go fullscreen and lock landscape (best effort, ignored where unsupported).
 document.addEventListener("click", async () => {
+  if (OVERLAY || window.overlayApi) return;   // inside the overlay app a click only drags the window
   try {
     if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: "hide" });
     await screen.orientation?.lock?.("landscape");
   } catch (err) {
     console.info("Fullscreen or orientation lock not available:", err.message);
   }
+});
+
+addEventListener("wheel", (e) => {
+  if (window.overlayApi && document.body.classList.contains("edit")) window.overlayApi.resize(e.deltaY < 0 ? 1 : -1);
 });
 
 try {

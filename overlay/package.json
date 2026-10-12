@@ -1,0 +1,13 @@
+{
+  "name": "cab-deck-overlay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Alpha Gen v2 dash in a transparent, click-through window over the game",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "33.2.1"
+  }
+}
