@@ -1,6 +1,6 @@
 // Cab Deck overlay: the Alpha Gen v2 dash in an always-on-top, click-through window over the game.
-// By default it is a solid dark panel (the dash with its own background); put "?overlay=1" on the
-// url in overlay.json for a see-through HUD instead. The game must run windowed or borderless;
+// By default it is the dark dash cut to its own silhouette (the window around it is transparent);
+// put "?overlay=1" on the url in overlay.json for a see-through HUD instead. The game must run windowed or borderless;
 // exclusive fullscreen hides other windows.
 //
 // Ctrl+Shift+F9   show / hide
@@ -17,7 +17,7 @@ const RESIZE_STEP = 1.05;     // per wheel notch
 const RETRY_MS = 2000;        // reload while the server is not up yet
 
 const DEFAULTS = {
-  url: "http://127.0.0.1:8702/",   // solid panel; "http://127.0.0.1:8702/?overlay=1" = see-through
+  url: "http://127.0.0.1:8702/?shape=1",   // dark dash cut to its silhouette; "?overlay=1" = see-through HUD
   width: 760,
   x: null,                    // null: centred near the bottom of the main screen
   y: null,
@@ -39,9 +39,17 @@ function loadConfig() {
   }
 }
 
-function saveConfig() {
+// Saves only the window's place and size; anything else stays as the user wrote it, so new
+// defaults (such as the url) still reach them.
+function savePlacement(placement) {
+  let saved = {};
   try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+    saved = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+  } catch (err) {
+    if (err.code !== "ENOENT") console.warn(`overlay.json is not valid, rewriting it: ${err.message}`);
+  }
+  try {
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify({ ...saved, ...placement }, null, 2));
   } catch (err) {
     console.error(`Cannot save overlay.json: ${err.message}`);
   }
@@ -95,7 +103,7 @@ function setEditing(on) {
   if (!on) {
     const { x, y, width } = win.getBounds();
     Object.assign(config, { x, y, width });
-    saveConfig();
+    savePlacement({ x, y, width });
     console.log(`Overlay saved at ${x},${y}, ${width} px wide.`);
   }
 }

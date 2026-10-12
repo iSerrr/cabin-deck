@@ -17,6 +17,8 @@
   html, body { margin: 0; height: 100%; background: #04090A; overflow: hidden; }
   /* overlay mode (?overlay): transparent page over the game; text gets a dark edge so it reads on a bright road */
   html.overlay, html.overlay body { background: transparent; }
+  html.overlay body.edit #stage { outline: none; }
+  html.shaped .demo { display: none; }   /* it sits above the silhouette */
   html.overlay .ov { filter: drop-shadow(0 1px 2px rgba(0,0,0,.85)); }
   /* overlay edit mode, toggled by the overlay app: drag to move, wheel to resize */
   body.edit { -webkit-app-region: drag; cursor: move; }
@@ -142,6 +144,7 @@ const vec2 ECO = vec2(1100. / 2500., 1500. / 2500.);
 const vec3 SATIN = vec3(.58, .63, .6);
 
 const float GX = .575;   // gauge origin, mirrored for the left gauge
+const float SHAPE_MARGIN = .014;   // silhouette: this far outside the gauges' outer edge
 const float BAND = .028; // scale centre line, this far inside the outline
 const float GAP = .0035; // half width of the divider between scale sections
 const float PANEL = .158; // inner panel frame, this far inside the outline (clear of the numbers)
@@ -317,8 +320,9 @@ vec3 plate(vec3 col, float d, float shade) {
 
 vec3 panels(vec3 col, vec2 p) {
   // top plate with DEMO / lamps, and the bottom plate with trip, odometer and average fuel
-  float top = sdTrapezoid(p - vec2(0., .437), .2, .29, .046) - .008;
-  col = plate(col, top, smoothstep(.39, .48, p.y));
+  // gear plate: its top edge sits on the line joining the two gauges' upper ends
+  float top = sdTrapezoid(p - vec2(0., .32), .2, .29, .046) - .008;
+  col = plate(col, top, smoothstep(.27, .37, p.y));
   // base at y -.48, level with the bottom scale line of both gauges (outline -.492 + BAND)
   float bottom = sdTrapezoid(p - vec2(0., -.396), .4, .3, .074) - .01;
   col = plate(col, bottom, smoothstep(-.31, -.47, p.y) * .6);
@@ -362,7 +366,17 @@ void main() {
   col = mini(col, p, .56, .865, -.177, uMini2.y, vec2(-1., .8));
 
   outColor = vec4(col, EM);
-  outCover = vec4(COV, 0., 0., 1.);
+  // silhouette: both gauges (outline plus a margin) and the band between them, whose top is the
+  // straight line joining the two gauges' upper ends
+  float shape = 0.;
+  for (int k = 0; k < 2; k++) {
+    float side = k == 0 ? -1. : 1.;
+    vec3 o = field(vec2((p.x - side * GX) * side, p.y));
+    shape = max(shape, smoothstep(-SHAPE_MARGIN - PX, -SHAPE_MARGIN + PX, o.y));
+  }
+  float topY = uEnds.z + SHAPE_MARGIN;
+  shape = max(shape, (1. - smoothstep(topY - PX, topY + PX, p.y)) * (1. - smoothstep(.5 - PX, .5 + PX, abs(p.x))));
+  outCover = vec4(COV, shape, 0., 1.);
 }
 </script>
 
@@ -435,6 +449,14 @@ vec3 softClip(vec3 x) {
 void main() {
   vec3 b = texture(uBloom, vUv).rgb * uBloomK;
   vec3 c = softClip(texture(uScene, vUv).rgb + b);
+  if (uOverlay > 1.5) {
+    // shaped: the dash with its background, cut to the silhouette (premultiplied)
+    vec2 p = (gl_FragCoord.xy - .5 * uRes) / uRes.y;
+    c *= 1. - .2 * smoothstep(.5, 1.25, length(p * vec2(.85, 1.4)));
+    float a = texture(uCover, vUv).g;
+    outColor = vec4(c * a, a);
+    return;
+  }
   if (uOverlay > .5) {
     // premultiplied over transparency: drawn parts by their coverage, the bloom by its own light
     float a = clamp(max(texture(uCover, vUv).r, max(b.r, max(b.g, b.b)) * 1.1), 0., 1.);
@@ -451,9 +473,12 @@ void main() {
 <script>
 "use strict";
 
-const ASPECT = 2.17;
-const OVERLAY = new URLSearchParams(location.search).has("overlay");   // drawn over the game by the overlay app
-if (OVERLAY) document.documentElement.classList.add("overlay");          // Galaxy S26 in landscape (≈ 19.5:9)
+const ASPECT = 2.17;          // Galaxy S26 in landscape (≈ 19.5:9)
+const PARAMS = new URLSearchParams(location.search);
+const OVERLAY = PARAMS.has("overlay");   // see-through HUD over the game
+const SHAPED = PARAMS.has("shape");      // dark dash cut to its own silhouette, transparent around it
+if (OVERLAY || SHAPED) document.documentElement.classList.add("overlay");
+if (SHAPED) document.documentElement.classList.add("shaped");
 const MAX_DPR = 2;            // cap render resolution to keep the shader cheap
 const BLOOM_LEVELS = 6;       // each level halves the size: wider, softer glow
 const BLOOM_STRENGTH = .45;
@@ -643,15 +668,15 @@ function buildOverlay() {
   // centre: gear with blinkers and D / N / R, speed, cruise line
   const arrow = d => `<svg class="blink" viewBox="0 0 24 24"><path d="${d}"/></svg>`;
   // top plate: gear between the blinkers
-  ui.left = addEl("", arrow("M10 4 2 12l8 8v-5h12V9H10z"), -.165, .437).firstChild;
-  ui.right = addEl("", arrow("M14 4l8 8-8 8v-5H2V9h12z"), .165, .437).firstChild;
-  ui.gear = addEl("gear", "N", 0, .437);
-  ui.dnr = addEl("dnr", "<span>D</span><span>N</span><span>R</span>", 0, .345);
-  ui.demo = addEl("demo", "", 0, .297);
-  ui.speed = addEl("speed", "0", 0, .075);
-  ui.limit = addEl("limit", "<span>SPEED</span><span>LIMIT</span><b></b>", .325, .085);
+  ui.left = addEl("", arrow("M10 4 2 12l8 8v-5h12V9H10z"), -.165, .32).firstChild;
+  ui.right = addEl("", arrow("M14 4l8 8-8 8v-5H2V9h12z"), .165, .32).firstChild;
+  ui.gear = addEl("gear", "N", 0, .32);
+  ui.dnr = addEl("dnr", "<span>D</span><span>N</span><span>R</span>", 0, .232);
+  ui.demo = addEl("demo", "", 0, .4);
+  ui.speed = addEl("speed", "0", 0, .03);
+  ui.limit = addEl("limit", "<span>SPEED</span><span>LIMIT</span><b></b>", .325, .045);
   ui.limitVal = ui.limit.querySelector("b");
-  addEl("unit", "MPH", 0, -.125);
+  addEl("unit", "MPH", 0, -.143);
   ui.cruise = addEl("cruise", `<svg viewBox="0 0 24 24"><path d="M4.5 17a8 8 0 1 1 15 0"/><path d="M12 15.5l4-5.5"/><path d="M7 9.2l1 1M12 6.5v1.4M17 9.2l-1 1"/><path d="M5 21h6l-2-2.5" /></svg><span>CRUISE CONTROL</span><b></b><small>MPH</small>`, 0, -.228);
   ui.cruiseSet = ui.cruise.querySelector("b");
 
@@ -661,7 +686,7 @@ function buildOverlay() {
   [ui.trip, ui.odo, ui.mpg] = stats.querySelectorAll(".stat-val");
 
   // lamps that are lit, either side of D / N / R
-  const rows = { lft: addEl("tt-row lft", "", -.1, .345), rgt: addEl("tt-row rgt", "", .1, .345) };
+  const rows = { lft: addEl("tt-row lft", "", -.1, .232), rgt: addEl("tt-row rgt", "", .1, .232) };
   ui.tt = {};
   TELLTALES.forEach((t, i) => {
     const el = document.createElement("div");
@@ -740,7 +765,7 @@ function freeTarget(gl, t) {
 }
 
 function initGL() {
-  const gl = canvas.getContext("webgl2", { antialias: false, alpha: OVERLAY, depth: false, powerPreference: "high-performance" });
+  const gl = canvas.getContext("webgl2", { antialias: false, alpha: OVERLAY || SHAPED, depth: false, powerPreference: "high-performance" });
   if (!gl) throw new Error("WebGL2 is not available in this browser.");
   // Half-float targets keep values above 1 for the bloom; plain 8-bit still works, just clips.
   const hdr = gl.getExtension("EXT_color_buffer_float") || gl.getExtension("EXT_color_buffer_half_float");
@@ -839,7 +864,7 @@ function render(g, now, boot) {
   gl.uniform1i(g.comp.u("uBloom"), 1);
   bindTex(gl, 2, scene.cover);
   gl.uniform1i(g.comp.u("uCover"), 2);
-  gl.uniform1f(g.comp.u("uOverlay"), OVERLAY ? 1 : 0);
+  gl.uniform1f(g.comp.u("uOverlay"), OVERLAY ? 1 : SHAPED ? 2 : 0);
   gl.uniform1f(g.comp.u("uBloomK"), BLOOM_STRENGTH * boot);
   gl.uniform2f(g.comp.u("uRes"), canvas.width, canvas.height);
   gl.uniform1f(g.comp.u("uTime"), now);
