@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@300;500;700&display=swap" rel="stylesheet">
+<!-- keeps the screen awake: native Wake Lock where allowed, else a tiny looping muted video (no HTTPS needed) -->
+<script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
 <style>
   /* Alpha Gen v2: speed and rpm scales run round the outline of two rounded boxes,
      from the bottom centre outwards, up the outer side and back along the top.
@@ -1058,9 +1060,30 @@ function start() {
   requestAnimationFrame(frame);
 }
 
+// Keep the screen on, like a playing video does. Browsers allow it only after a tap, so the first
+// tap (the same one that goes fullscreen) turns it on; it is turned on again on return to the tab.
+const noSleep = typeof NoSleep === "function" ? new NoSleep() : null;
+if (!noSleep) console.info("NoSleep.js did not load; the screen may turn off.");
+let keepAwake = false;
+
+async function stayAwake() {
+  if (!noSleep) return;
+  try {
+    await noSleep.enable();
+    keepAwake = true;
+  } catch (err) {
+    console.info("Cannot keep the screen awake yet:", err.message);
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (keepAwake && document.visibilityState === "visible") stayAwake();
+});
+
 // Tap anywhere: go fullscreen and lock landscape (best effort, ignored where unsupported).
 document.addEventListener("click", async () => {
   if (OVERLAY || window.overlayApi) return;   // inside the overlay app a click only drags the window
+  stayAwake();
   try {
     if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: "hide" });
     await screen.orientation?.lock?.("landscape");

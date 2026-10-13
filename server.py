@@ -1092,6 +1092,11 @@ def create_app(state: DeckState, dash_pages: dict[int, Path]) -> FastAPI:
         page = dash_pages.get(server[1], INDEX_PATH) if server else INDEX_PATH
         return FileResponse(page, headers={"Cache-Control": "no-store"})
 
+    @app.get("/v3")
+    async def panel_v3() -> FileResponse:
+        # Cab Deck v3: the same panel drawn as one three.js scene.
+        return FileResponse(STATIC_DIR / "v3.html", headers={"Cache-Control": "no-store"})
+
     @app.get("/dash")
     async def dash_index() -> FileResponse:
         return FileResponse(DASH_INDEX_PATH, headers={"Cache-Control": "no-store"})
