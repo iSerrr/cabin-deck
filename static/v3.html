@@ -1,0 +1,2146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#050806">
+<link rel="icon" href="/static/icon-192.png">
+<title>Cab Deck 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<!-- Cab Deck v3: the whole console is one three.js scene. All libraries come from jsDelivr,
+     pinned, no build step. postprocessing 6.36 supports three < 0.171, hence three 0.169. -->
+<script type="importmap">{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+  "postprocessing": "https://cdn.jsdelivr.net/npm/postprocessing@6.36.4/build/index.js",
+  "troika-three-text": "https://cdn.jsdelivr.net/npm/troika-three-text@0.52.0/dist/troika-three-text.esm.js",
+  "troika-three-utils": "https://cdn.jsdelivr.net/npm/troika-three-utils@0.52.0/dist/troika-three-utils.esm.js",
+  "troika-worker-utils": "https://cdn.jsdelivr.net/npm/troika-worker-utils@0.52.0/dist/troika-worker-utils.esm.js",
+  "webgl-sdf-generator": "https://cdn.jsdelivr.net/npm/webgl-sdf-generator@1.1.1/dist/webgl-sdf-generator.mjs",
+  "bidi-js": "https://cdn.jsdelivr.net/npm/bidi-js@1.0.3/dist/bidi.mjs",
+  "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/index.js"
+} }</script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; touch-action: none;
+    background: #050806; color: #E4DCC4;
+    font-family: "Saira Semi Condensed", -apple-system, "Segoe UI", Arial, sans-serif;
+  }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #boot {
+    position: fixed; inset: 0; display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center;
+    background: #050806; color: rgba(228,220,196,.55); font-size: 14px; font-weight: 700; letter-spacing: .32em;
+    transition: opacity .8s; z-index: 10;
+  }
+  #boot.gone { opacity: 0; pointer-events: none; }
+  #boot a { color: #8EE6BC; letter-spacing: .16em; }
+  #dimmer { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 6; }
+
+  /* SETUP stays HTML: a list of bindings reads better as text than as 3D. */
+  #setup {
+    position: fixed; display: none; z-index: 5; padding: 1px; border-radius: 16px;
+    background: linear-gradient(180deg, rgba(160,182,170,.34), rgba(160,182,170,.1));
+    box-shadow: 0 16px 30px -14px rgba(0,0,0,.9);
+  }
+  #setup.open { display: block; }
+  .setup-in {
+    height: 100%; border-radius: 15px; padding: 12px; display: grid; grid-template-rows: 26px minmax(0, 1fr) 56px; gap: 12px;
+    background: radial-gradient(ellipse at 50% 0%, rgba(21,49,38,.55), transparent 70%), linear-gradient(180deg, #0D1F17, #08120D);
+  }
+  .setup-head { display: flex; justify-content: space-between; align-items: center; padding: 0 4px; }
+  .setup-title { font-size: 12px; font-weight: 700; letter-spacing: .32em; color: rgba(228,220,196,.55); }
+  .hint { font-size: 12px; font-weight: 600; letter-spacing: .1em; color: rgba(228,220,196,.4); }
+  .binds { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 10px; min-height: 0; }
+  .bind, .btn {
+    border-radius: 10px; cursor: pointer; background: linear-gradient(180deg, #15281F, #0E1B15);
+    box-shadow: inset 0 0 0 1px rgba(160,182,170,.14), 0 10px 20px -10px rgba(0,0,0,.8);
+    transition: box-shadow .1s, transform .05s;
+  }
+  .bind { padding: 6px 12px; display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 0; overflow: hidden; }
+  .bind > *, .btn > * { pointer-events: none; }
+  .bind.pressed, .btn.pressed { transform: scale(.98); box-shadow: inset 0 0 0 1.5px #E8A13A, 0 0 26px -6px rgba(232,161,58,.55); }
+  .bind .num { font-size: 20px; font-weight: 700; color: #E6E8EA; }
+  .bind .game { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: rgba(228,220,196,.35); }
+  .bind .what { font-size: 14px; font-weight: 700; letter-spacing: .06em; color: #E4DCC4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bind .act { font-size: 11px; font-weight: 600; color: rgba(228,220,196,.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .setup-foot { display: flex; align-items: center; gap: 18px; }
+  .setup-foot .grow { flex: 1; }
+  .slider { display: flex; align-items: center; gap: 10px; }
+  .slider input { width: 160px; accent-color: #8EE6BC; }
+  .btn { height: 52px; padding: 0 22px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; letter-spacing: .16em; color: #E4DCC4; text-decoration: none; }
+
+  #rotate { display: none; position: fixed; inset: 0; z-index: 20; align-items: center; justify-content: center; background: #050806; font-size: 18px; letter-spacing: .16em; color: rgba(228,220,196,.5); }
+  @media (orientation: portrait) { #rotate { display: flex; } }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="setup"><div class="setup-in">
+  <div class="setup-head"><div class="setup-title">SETUP · BIND CONTROLS</div><div class="hint">TAP = ONE PRESS OF THAT vJoy BUTTON</div></div>
+  <div class="binds" id="binds"></div>
+  <div class="setup-foot">
+    <div class="slider"><div class="hint">BACKLIGHT</div><input id="bright" type="range" min="0.3" max="1" step="0.05"></div>
+    <div class="grow"></div>
+    <a class="btn" href="/">CLASSIC PANEL</a>
+    <div class="btn" id="fs-btn">FULLSCREEN</div>
+    <div class="btn" id="back-btn">BACK</div>
+  </div>
+</div></div>
+<div id="dimmer"></div>
+<div id="boot">CAB DECK</div>
+<div id="rotate">ROTATE THE TABLET TO LANDSCAPE</div>
+<script>
+  // If the 3D module cannot load (no internet for the CDN), offer the classic panel instead.
+  setTimeout(() => {
+    if (window.cabDeck3d) return;
+    document.getElementById("boot").innerHTML = 'THE 3D PANEL DID NOT LOAD<a href="/">OPEN THE CLASSIC PANEL</a>';
+  }, 12000);
+</script>
+<script type="module">
+import * as THREE from "three";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { EffectComposer, RenderPass, EffectPass, BloomEffect, VignetteEffect, ToneMappingEffect, ToneMappingMode } from "postprocessing";
+import { Text } from "troika-three-text";
+import { gsap } from "gsap";
+
+window.cabDeck3d = { started: true };   // set early: tells the boot fallback the module loaded
+
+// ===========================================================================
+// Constants
+// ===========================================================================
+
+// Layout is designed at 1194x834 units (1 unit = 1 CSS px of the classic panel) and stretched
+// in width or height to fill the screen, like the classic panel.
+const PANEL_W = 1194, PANEL_H = 834, PAD = 14, GAP = 12, TOP_H = 58, BOTTOM_H = 162;
+const FOV = 20;
+const Z_FACE = 6.2;   // top of a zone panel, where controls are mounted
+const Z_WELL = 7.8;   // top of a well (a sub-panel inside a zone)
+const Z_HIT = 30;     // invisible touch areas sit above everything
+
+const PING_INTERVAL_MS = 2000, PONG_TIMEOUT_MS = 5000;
+const RECONNECT_MIN_MS = 500, RECONNECT_MAX_MS = 5000;
+const PHASE_MS = 400, PENDING_TIMEOUT_MS = 3000, ACTIVATE_FLASH_MS = 450, TAP_FLIP_MS = 1500;
+const SWIPE_MIN_PX = 60, MAX_QUEUED_ERRORS = 20;
+const STORAGE = { sound: "cabDeckSound", bright: "cabDeckBright" };
+const HAPTIC = { tap: 12, hold: 25, button: 12, detent: 10, toggle: 18, tick: 6, ui: 6, linkLost: [40, 60, 40] };
+const DEMO = new URLSearchParams(location.search).has("demo");
+
+const COLOR = {
+  legend: "#E4DCC4", ok: "#8EE6BC", amb: "#E8A13A", ambLit: "#F0CF8A", red: "#E2463C",
+  org: "#F08A2E", blu: "#4C9DF0", white: "#E6E8EA",
+};
+const GLOW = { on: 3.2, dim: 1.1, off: 0 };   // emissive strength; above 1 the bloom picks it up
+const FONT_URL = (weight) => `https://cdn.jsdelivr.net/npm/@fontsource/saira-semi-condensed@5.1.0/files/saira-semi-condensed-latin-${weight}-normal.woff`;
+const FONTS = { 500: FONT_URL(500), 600: FONT_URL(600), 700: FONT_URL(700) };
+const CSS_FONT = '"Saira Semi Condensed", Arial, sans-serif';
+
+const ICON = {
+  hazard: "M32 10L56 52H8z M32 26v12 M32 44v1",
+  beacon: "M16 40a16 16 0 0 1 32 0z M10 40h44v8H10z M32 10v6 M14 18l5 4 M50 18l-5 4",
+  auxFront: "M8 24h48v14H8z M19 31m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0 M45 31m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0 M15 44l-4 10 M32 44v10 M49 44l4 10",
+  auxRoof: "M14 58V34l6-10h24l6 10v24z M20 34h24 M18 15h28v5H18z M22 9l-2-5 M32 9V3 M42 9l2-5",
+  horn: "M8 26h12l14-11v34L20 38H8z M42 24a10 10 0 0 1 0 16 M49 17a19 19 0 0 1 0 30",
+  activate: "M9 10l-5 5 5 5 M20 4v7a4 4 0 0 1-4 4H4",
+  chevronDown: "M5 9l7 8 7-8",
+  chevronUp: "M5 15l7-8 7 8",
+  sound: "M4 10v4h4l5 4V6l-5 4H4z M16 9a4 4 0 0 1 0 6 M18.5 6.5a8 8 0 0 1 0 11",
+  gear: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z",
+};
+
+// ===========================================================================
+// Model (same protocol and rules as the classic panel)
+// ===========================================================================
+
+const model = {
+  online: false,
+  game: { telemetry: false },
+  indicators: {},
+  switches: {},
+  pending: {},          // switch id -> position chosen on the panel, until the server reaches it
+  pressed: new Set(),   // keys of controls under a finger
+  phase: true,          // local blink phase (reconnect lamp, pending detents, warnings)
+  activateFlash: false,
+  sound: readStored(STORAGE.sound, typeof navigator.vibrate !== "function") === true,
+  bright: Number(readStored(STORAGE.bright, 1)) || 1,
+  drag: null,           // { id, x, position } while the wiper lever is held
+  setupOpen: false,
+};
+
+const activePointers = new Map();   // pointerId -> { key, ctl, kind }
+const queuedErrors = [];
+let socket = null, lastPong = 0, reconnectDelay = RECONNECT_MIN_MS, reconnectTimer = null;
+let lastSwitches = {}, pendingTimers = {};
+
+function readStored(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : JSON.parse(raw);
+  } catch (_) { return fallback; }
+}
+
+function writeStored(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) { /* storage unavailable */ }
+}
+
+function level(name) {
+  if (!model.online) return "off";
+  const indicator = model.indicators[name];
+  return indicator ? indicator.level : "off";
+}
+
+function blinkLevel(name) {
+  // An arrow lights for its own blinker or for the hazards; both carry the game's blink phase.
+  const own = level(name), hazards = level("hazards");
+  if (own === "on" || hazards === "on") return "on";
+  if (own === "dim" || hazards === "dim") return "dim";
+  return "off";
+}
+
+function switchPosition(id) {
+  const position = model.switches[id];
+  return model.online && typeof position === "number" ? position : -1;
+}
+
+function switchStatus(id, word) {
+  const pending = model.pending[id], position = switchPosition(id);
+  if (pending !== undefined) return { text: "SETTING…", color: COLOR.ambLit };
+  if (position > 0) return { text: `${word} ${position}`, color: COLOR.amb };
+  return { text: "OFF", color: COLOR.legend, opacity: .5 };
+}
+
+// ===========================================================================
+// Renderer, scene, post-processing
+// ===========================================================================
+
+const canvas = document.getElementById("scene");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, stencil: false, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.NoToneMapping;   // tone mapping happens in the effect pass
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#050806");
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.45;
+
+const camera = new THREE.PerspectiveCamera(FOV, 1, 100, 6000);
+scene.add(new THREE.HemisphereLight(0xcfe9dc, 0x0a1b14, 0.22));
+const sun = new THREE.DirectionalLight(0xfff6e8, 2.1);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.4;
+sun.shadow.radius = 3;
+scene.add(sun, sun.target);
+
+const composer = new EffectComposer(renderer, {
+  frameBufferType: THREE.HalfFloatType,
+  multisampling: Math.min(4, renderer.capabilities.maxSamples || 0),
+});
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new EffectPass(camera,
+  // a hard threshold: only real light sources glow; text and metal stay sharp
+  new BloomEffect({ mipmapBlur: true, luminanceThreshold: 1.1, luminanceSmoothing: 0.03, intensity: 1.2, radius: 0.6 }),
+  new VignetteEffect({ offset: 0.38, darkness: 0.35 }),
+  // Neutral keeps the brand colours and the cream legends true, and only rolls off the highlights.
+  new ToneMappingEffect({ mode: ToneMappingMode.NEUTRAL })));
+
+// Render on demand: a frame is drawn only when something changed or a tween is running.
+let dirty = true;
+function invalidate() { dirty = true; }
+gsap.ticker.add(() => {
+  if (!dirty) return;
+  dirty = false;
+  composer.render();
+});
+
+// Every tween asks for frames while it runs.
+function tween(target, vars) {
+  const user = vars.onUpdate;
+  return gsap.to(target, { ...vars, onUpdate: user ? () => { user(); invalidate(); } : invalidate });
+}
+
+// ===========================================================================
+// Materials and shared geometry
+// ===========================================================================
+
+const metal = (color, roughness) => new THREE.MeshPhysicalMaterial({ color, metalness: 1, roughness, clearcoat: .3, clearcoatRoughness: .4 });
+// Painted and plastic surfaces get the room reflection only faintly: the room is bright, and at full
+// strength it washes the dark green out to grey. (scene.environmentIntensity covers only materials
+// without their own envMap, i.e. the metals.)
+const SURFACE = (params) => new THREE.MeshPhysicalMaterial({ envMap: scene.environment, envMapIntensity: .12, ...params });
+const MAT = {
+  rim: metal(0x6b8076, .5),                  // satin trim round every zone
+  bezel: metal(0x5a635e, .3),                // gunmetal button bezels
+  nut: metal(0x646d68, .33),
+  tube: metal(0x434a46, .42),
+  lever: metal(0x8a938e, .24),
+  shaft: metal(0x9aa39e, .25),
+  knob: new THREE.MeshPhysicalMaterial({ color: 0x1d2622, metalness: .75, roughness: .42, clearcoat: .4, clearcoatRoughness: .3 }),
+  face: SURFACE({ color: 0x0d1f17, roughness: .7, clearcoat: .2, clearcoatRoughness: .6 }),
+  well: SURFACE({ color: 0x060e0a, roughness: .8 }),
+  cell: SURFACE({ color: 0x07110c, roughness: .85 }),
+  key: SURFACE({ color: 0x1a3328, roughness: .55, clearcoat: .5, clearcoatRoughness: .35 }),
+  plate: SURFACE({ color: 0x173328, roughness: .5, clearcoat: .4, clearcoatRoughness: .45 }),
+  hole: new THREE.MeshStandardMaterial({ color: 0x030504, roughness: .9, side: THREE.BackSide }),
+  slot: new THREE.MeshStandardMaterial({ color: 0x010201, roughness: 1 }),
+  hit: new THREE.MeshBasicMaterial({ visible: false }),
+};
+const HIT_GEO = new THREE.PlaneGeometry(1, 1);
+const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
+const PI = Math.PI, DEG = PI / 180;
+
+const lathe = (points, segments = 64) =>
+  new THREE.LatheGeometry(points.map(([r, y]) => new THREE.Vector2(r, y)), segments).rotateX(PI / 2);   // built along Y, turned to face the camera (+Z)
+
+function shade(mesh) { mesh.castShadow = true; mesh.receiveShadow = true; return mesh; }
+
+function emissiveMaterial(base, roughness = .35) {
+  return SURFACE({ color: base, roughness, metalness: 0, clearcoat: .8, clearcoatRoughness: .2, emissive: 0x000000, envMapIntensity: .3 });
+}
+
+// ===========================================================================
+// Layout helpers. Rects use screen-like coordinates: x right, y down, from the panel's top left.
+// ===========================================================================
+
+let W = PANEL_W, H = PANEL_H;
+let root = new THREE.Group();
+scene.add(root);
+let updaters = [];
+let hits = [];
+
+const R = (x, y, w, h) => ({ x, y, w, h });
+const inset = (r, t, rt = t, b = t, l = rt) => R(r.x + l, r.y + t, r.w - l - rt, r.h - t - b);
+
+function split(r, axis, sizes, gap) {
+  // numbers are fixed sizes, strings like "2fr" share what is left
+  const total = axis === "x" ? r.w : r.h;
+  const fixed = sizes.reduce((s, v) => s + (typeof v === "number" ? v : 0), 0);
+  const parts = sizes.reduce((s, v) => s + (typeof v === "string" ? parseFloat(v) : 0), 0);
+  const free = Math.max(0, total - fixed - gap * (sizes.length - 1));
+  let pos = axis === "x" ? r.x : r.y;
+  return sizes.map((v) => {
+    const len = typeof v === "number" ? v : free * parseFloat(v) / parts;
+    const out = axis === "x" ? R(pos, r.y, len, r.h) : R(r.x, pos, r.w, len);
+    pos += len + gap;
+    return out;
+  });
+}
+const rows = (r, sizes, gap = GAP) => split(r, "y", sizes, gap);
+const cols = (r, sizes, gap = GAP) => split(r, "x", sizes, gap);
+
+function placeAt(obj, x, y, z) { obj.position.set(x - W / 2, H / 2 - y, z); return obj; }
+function place(obj, r, z) { return placeAt(obj, r.x + r.w / 2, r.y + r.h / 2, z); }
+function add(...objects) { root.add(...objects); return objects[0]; }
+
+function roundedRect(w, h, radius) {
+  const s = new THREE.Shape(), x = -w / 2, y = -h / 2, r = Math.min(radius, w / 2, h / 2);
+  s.moveTo(x + r, y);
+  s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+  return s;
+}
+
+// A rounded slab with bevelled edges, back at z = 0 and front at z = depth.
+function slabGeometry(w, h, radius, depth, bevel) {
+  const b = Math.max(0, Math.min(bevel, depth / 2 - .01, w / 4, h / 4));
+  const geo = new THREE.ExtrudeGeometry(roundedRect(w - 2 * b, h - 2 * b, Math.max(.5, radius - b)), {
+    depth: Math.max(.01, depth - 2 * b), bevelEnabled: b > 0, bevelThickness: b, bevelSize: b, bevelSegments: 3, curveSegments: 10,
+  });
+  return geo.translate(0, 0, b);
+}
+
+function slab(r, radius, depth, bevel, material, z = 0) {
+  return add(place(shade(new THREE.Mesh(slabGeometry(r.w, r.h, radius, depth, bevel), material)), r, z));
+}
+
+// A rounded frame `width` wide: the satin lip round a zone, standing a little above its face.
+function frame(r, radius, width, depth, material, z = 0) {
+  const b = Math.min(.6, width / 3, depth / 2 - .01);
+  const shape = roundedRect(r.w - 2 * b, r.h - 2 * b, Math.max(.5, radius - b));
+  shape.holes.push(roundedRect(r.w - 2 * width + 2 * b, r.h - 2 * width + 2 * b, Math.max(.5, radius - width + b)));
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: depth - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 3, curveSegments: 10 });
+  return add(place(shade(new THREE.Mesh(geo.translate(0, 0, b), material)), r, z));
+}
+
+// Invisible touch area. data: { type, ... } is what a press on it does.
+function hit(r, data, z = Z_HIT) {
+  const mesh = new THREE.Mesh(HIT_GEO, MAT.hit);
+  mesh.scale.set(r.w, r.h, 1);
+  mesh.userData = data;
+  hits.push(add(place(mesh, r, z)));
+  return mesh;
+}
+
+// ===========================================================================
+// Text (troika SDF text, crisp at any scale)
+// ===========================================================================
+
+function txt(value, x, y, opts = {}) {
+  const t = new Text();
+  t.text = String(value);
+  t.font = FONTS[opts.weight || 700];
+  t.fontSize = opts.size || 13;
+  t.letterSpacing = opts.spacing ?? .12;
+  t.anchorX = opts.anchor || "center";
+  t.anchorY = "middle";
+  t.color = opts.color || COLOR.legend;
+  t.fillOpacity = opts.opacity ?? 1;
+  if (opts.lineHeight) t.lineHeight = opts.lineHeight;
+  if (opts.align) t.textAlign = opts.align;
+  placeAt(t, x, y, opts.z ?? Z_FACE + .3);
+  t.sync(invalidate);
+  return add(t);
+}
+
+function setText(t, value) {
+  const s = String(value);
+  if (t.text === s) return;
+  t.text = s;
+  t.sync(invalidate);
+}
+
+function setTextColor(t, color, opacity = 1) {
+  if (t.color === color && t.fillOpacity === opacity) return;
+  t.color = color;
+  t.fillOpacity = opacity;
+  invalidate();
+}
+
+// ===========================================================================
+// Canvas textures (button legends, dials)
+// ===========================================================================
+
+function canvasTexture(size, paint) {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  paint(c.getContext("2d"), size);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+const legendCache = new Map();
+// Cap legend: light glyph on dark smoked plastic. The colour map gives the unlit look; the
+// emissive map (lit from inside) has a brighter plastic, so the whole cap glows and the glyph shines.
+function legendTexture(glyph, plastic = "rgb(62,70,66)") {
+  const key = JSON.stringify(glyph) + plastic;
+  if (legendCache.has(key)) return legendCache.get(key);
+  const tex = canvasTexture(256, (g, size) => {
+    g.fillStyle = plastic;
+    g.fillRect(0, 0, size, size);
+    g.strokeStyle = g.fillStyle = "rgb(236,238,236)";
+    g.lineCap = g.lineJoin = "round";
+    if (glyph.path) {
+      const box = glyph.box || 64;   // icons come in 64- and 24-unit boxes
+      g.translate(size * .2, size * .2);
+      g.scale(size * .6 / box, size * .6 / box);
+      g.lineWidth = box === 24 ? 2.2 : 4.2;
+      g.stroke(new Path2D(glyph.path));
+    } else {
+      g.font = `700 ${size * .2}px ${CSS_FONT}`;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      glyph.text.forEach((line, i) => g.fillText(line, size / 2, size / 2 + (i - (glyph.text.length - 1) / 2) * size * .24));
+    }
+  });
+  legendCache.set(key, tex);
+  return tex;
+}
+
+// Dial face: ticks and numbers round a 240-degree arc (or a 360-degree clock), backlit.
+function dialTexture({ clock = false, red = null } = {}) {
+  return canvasTexture(1024, (g, size) => {
+    const c = size / 2, r = size / 2;
+    const grad = g.createRadialGradient(c, c * .8, 0, c, c, r);
+    grad.addColorStop(0, "#12241B");
+    grad.addColorStop(1, "#060d09");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, size, size);
+    const at = (deg, radius) => [c + Math.sin(deg * DEG) * radius, c - Math.cos(deg * DEG) * radius];
+    if (clock) {
+      for (let i = 0; i < 60; i++) {
+        const major = i % 5 === 0;
+        g.strokeStyle = major ? "#E4DCC4" : "rgba(228,220,196,.45)";
+        g.lineWidth = major ? r * .045 : r * .015;
+        g.beginPath(); g.moveTo(...at(i * 6, r * .92)); g.lineTo(...at(i * 6, r * (major ? .76 : .85))); g.stroke();
+      }
+      return;
+    }
+    // 0..150 psi over -120..120 degrees
+    const ang = (v) => -120 + v / 150 * 240;
+    if (red) {
+      g.strokeStyle = "rgba(226,70,60,.9)";
+      g.lineWidth = r * .07;
+      g.beginPath();
+      g.arc(c, c, r * .86, (ang(0) - 90) * DEG, (ang(red) - 90) * DEG);
+      g.stroke();
+    }
+    g.fillStyle = "#E4DCC4";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.font = `700 ${r * .17}px ${CSS_FONT}`;
+    for (let v = 0; v <= 150; v += 10) {
+      const major = v % 30 === 0;
+      g.strokeStyle = "#E4DCC4";
+      g.lineWidth = major ? r * .03 : r * .015;
+      g.beginPath(); g.moveTo(...at(ang(v), r * .93)); g.lineTo(...at(ang(v), r * (major ? .74 : .82))); g.stroke();
+      if (major) g.fillText(String(v), ...at(ang(v), r * .56));
+    }
+    g.fillStyle = "rgba(228,220,196,.55)";
+    g.font = `700 ${r * .12}px ${CSS_FONT}`;
+    g.fillText("PSI", c, c + r * .5);
+  });
+}
+
+// ===========================================================================
+// Parts
+// ===========================================================================
+
+// Indicator lamp: a small glowing dome in a satin ring. set(color, level) fades it.
+const LAMP_GEO = {
+  dome: new THREE.SphereGeometry(1, 24, 12, 0, PI * 2, 0, PI / 2).rotateX(PI / 2),
+  ring: new THREE.TorusGeometry(1.15, .2, 10, 40),
+};
+function lamp(x, y, z, radius) {
+  const mat = emissiveMaterial(0x0c1912, .3);
+  const group = new THREE.Group();
+  const dome = new THREE.Mesh(LAMP_GEO.dome, mat);
+  dome.scale.set(1, 1, .55);
+  group.add(dome, new THREE.Mesh(LAMP_GEO.ring, MAT.rim));
+  group.scale.setScalar(radius);
+  add(placeAt(group, x, y, z));
+  return glowing(mat, { baseOff: 0x0c1912 });
+}
+
+// Fades a material's emissive to the colour and level asked for; only animates on a change.
+function glowing(mat, { baseOff = null, strength = GLOW, duration = .14 } = {}) {
+  const state = { key: "", v: { k: 0 }, color: new THREE.Color() };
+  const paint = () => {
+    mat.emissive.copy(state.color).multiplyScalar(state.v.k);
+    if (baseOff !== null) mat.color.set(baseOff).lerp(state.color, Math.min(1, state.v.k) * .5);
+  };
+  return {
+    set(color, lvl) {
+      const key = `${color}|${lvl}`;
+      if (key === state.key) return;
+      const first = !state.key;
+      state.key = key;
+      state.color.set(color);
+      if (first) { state.v.k = strength[lvl] ?? 0; paint(); invalidate(); return; }
+      tween(state.v, { k: strength[lvl] ?? 0, duration, ease: "power1.out", overwrite: true, onUpdate: paint });
+    },
+  };
+}
+
+// --- Lit push button: translucent cap in a gunmetal bezel. size = bezel diameter in units.
+let BUTTON_GEO = null;
+function buttonGeometry() {
+  return BUTTON_GEO ||= {
+    bezel: lathe([[10.4, 3], [10.4, 0], [14, 0], [14.4, 1.4], [13.7, 2.9], [11.2, 3.5], [10.4, 3]]),
+    well: new THREE.CylinderGeometry(10.4, 10.4, 3, 48, 1, true).rotateX(PI / 2).translate(0, 0, 1.5),
+    capSide: lathe([[0, 0], [9.9, 0], [10, 3.4], [9.6, 4.6], [8.7, 5.25]]),
+    capTop: new THREE.CircleGeometry(8.75, 64).translate(0, 0, 5.26),
+    halo: new THREE.TorusGeometry(16, .8, 16, 96).translate(0, 0, .6),
+  };
+}
+
+function pushButton(glyph, size, { halo = false } = {}) {
+  const geo = buttonGeometry();
+  const group = new THREE.Group();
+  group.scale.setScalar(size / 28.8);
+  const legend = legendTexture(glyph);
+  const plastic = { roughness: .16, metalness: 0, clearcoat: 1, clearcoatRoughness: .1 };
+  const side = new THREE.MeshPhysicalMaterial({ ...plastic, color: 0x2a302d, emissive: 0x000000, transparent: true, opacity: .94 });
+  const top = new THREE.MeshPhysicalMaterial({ ...plastic, color: 0xc9d0cc, map: legend, emissiveMap: legendTexture(glyph, "rgb(120,120,120)"), emissive: 0x000000 });
+  const cap = new THREE.Group();
+  cap.add(shade(new THREE.Mesh(geo.capSide, side)), new THREE.Mesh(geo.capTop, top));
+  group.add(shade(new THREE.Mesh(geo.bezel, MAT.bezel)), new THREE.Mesh(geo.well, MAT.hole), cap);
+  // halo: a lit ring round the bezel shows the state from across the cab
+  let haloGlow = null;
+  if (halo) {
+    const haloMat = emissiveMaterial(0x0b1410, .5);
+    group.add(new THREE.Mesh(geo.halo, haloMat));
+    haloGlow = glowing(haloMat, { baseOff: 0x0b1410, strength: { on: 2.4, dim: .9, off: 0 } });
+  }
+  const glow = { key: "", v: { k: 0 }, color: new THREE.Color() };
+  const paint = () => {
+    const k = glow.v.k;
+    top.emissive.copy(glow.color).multiplyScalar(k * 1.8);   // the emissive map is grey, so push it past the bloom threshold
+    side.emissive.copy(glow.color).multiplyScalar(k * .35);
+    top.color.set(0xc9d0cc).lerp(glow.color, Math.min(1, k) * .35);
+  };
+  let pressed = false;
+  return {
+    group,
+    set(color, lvl, isPressed, haloColor = color, haloLevel = lvl) {
+      const key = `${color}|${lvl}`;
+      if (key !== glow.key) {
+        glow.key = key;
+        glow.color.set(color);
+        tween(glow.v, { k: GLOW[lvl] ?? 0, duration: .16, ease: "power1.out", overwrite: true, onUpdate: paint });
+      }
+      if (haloGlow) haloGlow.set(haloColor, haloLevel);
+      if (isPressed !== pressed) {
+        pressed = isPressed;
+        // the cap sinks fast and springs back with a little wobble
+        tween(cap.position, pressed
+          ? { z: -1.8, duration: .06, ease: "power2.out", overwrite: true }
+          : { z: 0, duration: .45, ease: "elastic.out(1, .45)", overwrite: true });
+      }
+    },
+  };
+}
+
+// --- Bat-handle toggle (Peterbilt style), up is on.
+const TOGGLE_TILT = 28 * DEG;
+let TOGGLE_GEO = null;
+function toggleGeometry() {
+  if (TOGGLE_GEO) return TOGGLE_GEO;
+  const hex = new THREE.Shape();
+  for (let i = 0; i < 6; i++) {
+    const a = PI / 6 + i * PI / 3;
+    if (i) hex.lineTo(10 * Math.cos(a), 10 * Math.sin(a)); else hex.moveTo(10 * Math.cos(a), 10 * Math.sin(a));
+  }
+  const hole = new THREE.Path();
+  hole.absarc(0, 0, 5.4, 0, PI * 2, true);
+  hex.holes.push(hole);
+  return TOGGLE_GEO = {
+    washer: new THREE.CylinderGeometry(12.5, 12.5, 1, 64).rotateX(PI / 2).translate(0, 0, .5),
+    nut: new THREE.ExtrudeGeometry(hex, { depth: 3, bevelEnabled: true, bevelThickness: .7, bevelSize: .7, bevelSegments: 3, curveSegments: 32 }).translate(0, 0, 1.7),
+    tube: new THREE.CylinderGeometry(5.2, 5.2, 8, 48).rotateX(PI / 2).translate(0, 0, 4.5),
+    thread: new THREE.TorusGeometry(5.25, .32, 8, 48),
+    dome: new THREE.SphereGeometry(4.6, 32, 16, 0, PI * 2, 0, PI / 2).rotateX(PI / 2).translate(0, 0, 8.5),
+    ring: new THREE.TorusGeometry(14.6, .9, 16, 96).translate(0, 0, .6),
+    lever: new THREE.LatheGeometry([[0, 0], [2.5, 0], [2.4, 4], [2.1, 10], [1.8, 16], [1.9, 18.5], [2.9, 20.5], [3.6, 23], [3.8, 25.5], [3.4, 28], [2.4, 29.6], [0, 30.2]]
+      .map(([r, y]) => new THREE.Vector2(r, y)), 48),
+  };
+}
+
+function toggleLever(x, y, z, scale) {
+  const geo = toggleGeometry();
+  const group = new THREE.Group();
+  group.scale.setScalar(scale);
+  const threads = [6.9, 7.8].map((tz) => { const m = shade(new THREE.Mesh(geo.thread, MAT.lever)); m.position.z = tz; return m; });
+  const pivot = new THREE.Group();
+  pivot.position.z = 8.5;
+  pivot.add(shade(new THREE.Mesh(geo.lever, MAT.lever)));
+  // the ring round the washer lights up when the switch is on
+  const ringMat = emissiveMaterial(0x0b1410, .5);
+  const ring = new THREE.Mesh(geo.ring, ringMat);
+  group.add(shade(new THREE.Mesh(geo.washer, MAT.bezel)), shade(new THREE.Mesh(geo.nut, MAT.nut)),
+    shade(new THREE.Mesh(geo.tube, MAT.tube)), ...threads, shade(new THREE.Mesh(geo.dome, MAT.nut)), pivot, ring);
+  add(placeAt(group, x, y, z));
+  const glow = glowing(ringMat, { baseOff: 0x0b1410, strength: { on: 2.6, dim: 1, off: 0 } });
+  let up = null;
+  return {
+    light(color, lvl) { glow.set(color, lvl); },
+    show(isUp) {
+      if (isUp === up) return;
+      const target = PI / 2 - (isUp ? TOGGLE_TILT : -TOGGLE_TILT);   // the lever is built along Y
+      if (up === null) { pivot.rotation.x = target; invalidate(); }
+      // a real toggle cannot pass its stop, so it bounces back from it
+      else tween(pivot.rotation, { x: target, duration: .3, ease: "bounce.out", overwrite: true });
+      up = isUp;
+    },
+  };
+}
+
+// --- Push-pull knob (park brake diamond, trailer air octagon).
+let KNOB_GEO = null;
+function knobGeometry(form) {
+  KNOB_GEO ||= {
+    bezel: lathe([[4.2, 2.6], [4.2, 0], [12.5, 0], [12.9, 1.2], [12.2, 2.4], [5.2, 2.9], [4.2, 2.6]]),
+    shaft: new THREE.CylinderGeometry(3.2, 3.2, 1, 32).rotateX(PI / 2),
+    halo: new THREE.TorusGeometry(14.6, .85, 16, 96).translate(0, 0, .6),
+    legend: new THREE.PlaneGeometry(15.5, 15.5).translate(0, 0, 7.05),
+  };
+  if (KNOB_GEO[form]) return KNOB_GEO;
+  const shape = new THREE.Shape();
+  if (form === "diamond") {
+    const a = 8.6, r = 2.4;   // a rounded square turned 45 degrees
+    shape.moveTo(-a + r, -a);
+    shape.lineTo(a - r, -a); shape.quadraticCurveTo(a, -a, a, -a + r);
+    shape.lineTo(a, a - r); shape.quadraticCurveTo(a, a, a - r, a);
+    shape.lineTo(-a + r, a); shape.quadraticCurveTo(-a, a, -a, a - r);
+    shape.lineTo(-a, -a + r); shape.quadraticCurveTo(-a, -a, -a + r, -a);
+  } else {
+    for (let i = 0; i < 8; i++) {
+      const a = PI / 8 + i * PI / 4;
+      if (i) shape.lineTo(11.4 * Math.cos(a), 11.4 * Math.sin(a)); else shape.moveTo(11.4 * Math.cos(a), 11.4 * Math.sin(a));
+    }
+  }
+  const body = new THREE.ExtrudeGeometry(shape, { depth: 5.2, bevelEnabled: true, bevelThickness: 1.8, bevelSize: 1.5, bevelSegments: 6, curveSegments: 16 });
+  if (form === "diamond") body.rotateZ(PI / 4);
+  KNOB_GEO[form] = body;
+  return KNOB_GEO;
+}
+
+function knobLegend(symbol, ink) {
+  return canvasTexture(256, (g, size) => {
+    g.fillStyle = g.strokeStyle = ink;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    if (symbol.length === 1) {
+      g.lineWidth = size * .06;
+      g.beginPath(); g.arc(size / 2, size / 2, size * .3, 0, PI * 2); g.stroke();
+      g.font = `700 ${size * .38}px ${CSS_FONT}`;
+    } else {
+      g.font = `700 ${size * .3}px ${CSS_FONT}`;
+    }
+    g.fillText(symbol, size / 2, size / 2 + size * .02);
+  });
+}
+
+function pullKnob(spec, x, y, z, size) {
+  const geo = knobGeometry(spec.form);
+  const group = new THREE.Group();
+  group.scale.setScalar(size / 31);
+  const shaft = shade(new THREE.Mesh(geo.shaft, MAT.shaft));
+  const cap = new THREE.Group();
+  cap.add(shade(new THREE.Mesh(geo[spec.form], new THREE.MeshPhysicalMaterial({ color: spec.capColor, roughness: .32, metalness: 0, clearcoat: 1, clearcoatRoughness: .15, sheen: .3 }))),
+    new THREE.Mesh(geo.legend, new THREE.MeshBasicMaterial({ map: knobLegend(spec.symbol, spec.ink), transparent: true })));
+  const haloMat = emissiveMaterial(0x0b1410, .5);
+  group.add(shade(new THREE.Mesh(geo.bezel, MAT.bezel)), shaft, cap, new THREE.Mesh(geo.halo, haloMat));
+  add(placeAt(group, x, y, z));
+  const halo = glowing(haloMat, { baseOff: 0x0b1410, strength: { on: 2.2, off: 0 } });
+  const IN = 2.6, OUT = 11;   // a pulled knob stands 8 mm out of its bezel
+  // the shaft runs from the bezel to the underside of the cap, so it only shows when pulled
+  const syncShaft = () => { shaft.scale.z = Math.max(.01, cap.position.z); shaft.position.z = cap.position.z / 2; };
+  cap.position.z = IN;
+  syncShaft();
+  let last = "";
+  return {
+    set(pulled, pressed, lit) {
+      halo.set(spec.color, lit ? "on" : "off");
+      const key = `${pulled}|${pressed}`;
+      if (key === last) return;
+      const first = !last;
+      last = key;
+      const target = (pulled ? OUT : IN) - (pressed ? 1 : 0);
+      if (first) { cap.position.z = target; syncShaft(); invalidate(); return; }
+      tween(cap.position, { z: target, duration: pressed ? .08 : .5, ease: pressed ? "power2.out" : "back.out(2.2)", overwrite: true, onUpdate: syncShaft });
+    },
+  };
+}
+
+// --- Round dial: bezel, backlit face, hands or needle that cast shadows onto the face.
+function dialBezel(group, radius) {
+  group.add(shade(new THREE.Mesh(lathe([[radius - 1, 4], [radius - 1, 0], [radius + 5, 0], [radius + 6.5, 3], [radius + 5.2, 6], [radius + 1, 6.6], [radius - 1, 4]], 96), MAT.rim)));
+}
+
+function dialFace(group, radius, texture) {
+  const mat = new THREE.MeshStandardMaterial({ map: texture, emissiveMap: texture, emissive: 0xffffff, emissiveIntensity: .32, roughness: .8, envMap: scene.environment, envMapIntensity: .1 });
+  const face = new THREE.Mesh(new THREE.CircleGeometry(radius, 96), mat);
+  face.position.z = .5;
+  face.receiveShadow = true;
+  group.add(face);
+}
+
+// Turn to an angle the short way round (clock hands wrap at 12 and 60).
+function turnTo(obj, target, vars) {
+  const current = obj.rotation.z;
+  let delta = (target - current) % (2 * PI);
+  if (delta > PI) delta -= 2 * PI;
+  if (delta < -PI) delta += 2 * PI;
+  if (Math.abs(delta) < 1e-4) return;
+  tween(obj.rotation, { z: current + delta, overwrite: true, ...vars, onComplete: () => { obj.rotation.z %= 2 * PI; } });
+}
+
+function hand(group, width, length, tail, depth, z, material) {
+  const pivot = new THREE.Group();
+  const mesh = shade(new THREE.Mesh(UNIT_BOX, material));
+  mesh.scale.set(width, length + tail, depth);
+  mesh.position.y = (length - tail) / 2;
+  pivot.add(mesh);
+  pivot.position.z = z;
+  group.add(pivot);
+  return pivot;
+}
+
+function hub(group, radius, z) {
+  const m = shade(new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 2, 32).rotateX(PI / 2), MAT.lever));
+  m.position.z = z;
+  group.add(m);
+}
+
+// ===========================================================================
+// Zones
+// ===========================================================================
+
+// A zone: satin rim with a dark green face inset into it, title in the corner.
+function zonePanel(r, title, { titleH = 24, gap = GAP, status = false, withLamp = false } = {}) {
+  frame(r, 16, 2, Z_FACE + .9, MAT.rim);
+  slab(inset(r, 1.6), 14.5, Z_FACE, 1.4, MAT.face);
+  const inner = inset(r, 8);
+  const titleY = inner.y + titleH / 2;
+  txt(title, inner.x + 4, titleY, { size: 12, spacing: .32, opacity: .55, anchor: "left" });
+  let right = inner.x + inner.w - 4, statusText = null, statusLamp = null;
+  if (withLamp) { statusLamp = lamp(right - 8, titleY, Z_FACE, 7); right -= 24; }
+  if (status) statusText = txt("", right, titleY, { size: 14, weight: 600, spacing: .06, anchor: "right" });
+  return { body: R(inner.x, inner.y + titleH + gap, inner.w, inner.h - titleH - gap), status: statusText, lamp: statusLamp };
+}
+
+function well(r) { slab(r, 10, Z_WELL - Z_FACE, .6, MAT.well, Z_FACE); }
+
+function wellHeader(r, title) {
+  const y = r.y + 15;
+  txt(title, r.x + 12, y, { size: 17, weight: 600, spacing: .08, anchor: "left", z: Z_WELL + .3 });
+  return { y, right: r.x + r.w - 12, body: R(r.x, r.y + 28, r.w, r.h - 28) };
+}
+
+// A lit push button with its name under it; the whole rect is its touch area.
+// spec: { ctl, kind, label, color, icon, iconBox, size, indicator | level() }
+function buttonTile(r, spec, z = Z_FACE) {
+  const labelH = 13, gap = 9;
+  const size = Math.min(spec.size, r.h - labelH - gap - 6, r.w - 8);
+  const top = r.y + (r.h - size - gap - labelH) / 2;
+  const button = pushButton({ path: spec.icon, box: spec.iconBox || 64 }, size);
+  add(placeAt(button.group, r.x + r.w / 2, top + size / 2, z));
+  txt(spec.label, r.x + r.w / 2, top + size + gap + labelH / 2, { size: 13, spacing: .16, z: z + .3 });
+  hit(r, { type: "ctl", ctl: spec.ctl, kind: spec.kind || "tap" });
+  updaters.push(() => {
+    const lvl = spec.level ? spec.level() : level(spec.indicator);
+    button.set(spec.color, lvl, model.pressed.has(spec.ctl));
+  });
+}
+
+// --- Top row: blinkers and the status plate --------------------------------
+
+function blinker(r, side, ctl, indicator) {
+  const key = new THREE.Group();
+  key.add(shade(new THREE.Mesh(slabGeometry(r.w, r.h, 10, 6, 1.4), MAT.key)));
+  // arrow from the classic panel's 84x64 icon
+  const pts = side === "left"
+    ? [[44, 10], [10, 32], [44, 54], [44, 42], [74, 42], [74, 22], [44, 22]]
+    : [[40, 22], [10, 22], [10, 42], [40, 42], [40, 54], [74, 32], [40, 10]];   // same winding as the left one
+  const shape = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2((x - 42) * .66, (32 - y) * .66)));
+  const arrowMat = emissiveMaterial(0x2c4a3b, .4);
+  const arrow = shade(new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 2, bevelEnabled: true, bevelThickness: .6, bevelSize: .6, bevelSegments: 2 }), arrowMat));
+  const arrowX = side === "left" ? -r.w / 2 + 50 : r.w / 2 - 50;
+  arrow.position.set(arrowX, 0, 6);
+  const label = new Text();
+  Object.assign(label, { text: side === "left" ? "LEFT" : "RIGHT", font: FONTS[600], fontSize: 16, letterSpacing: .06, anchorX: "center", anchorY: "middle", color: COLOR.legend });
+  label.position.set(side === "left" ? 28 : -28, 0, 6.3);
+  label.sync(invalidate);
+  key.add(arrow, label);
+  add(place(key, r, 0));
+  hit(r, { type: "ctl", ctl, kind: "tap" });
+  const glow = glowing(arrowMat, { baseOff: 0x2c4a3b, strength: { on: 3.6, dim: .8, off: 0 }, duration: .06 });
+  let pressed = false;
+  updaters.push(() => {
+    glow.set(COLOR.ok, blinkLevel(indicator));
+    const now = model.pressed.has(ctl);
+    if (now !== pressed) {
+      pressed = now;
+      tween(key.position, { z: now ? -2 : 0, duration: now ? .06 : .3, ease: now ? "power2.out" : "back.out(3)", overwrite: true });
+    }
+  });
+}
+
+function statusPlate(r) {
+  frame(r, 8, 1.8, 5.4, MAT.rim);
+  slab(inset(r, 1.4), 7, 4.6, 1, MAT.plate);
+  const y = r.y + r.h / 2, z = 4.6;
+  const linkLamp = lamp(r.x + 26, y, z, 8);
+  txt("LINK", r.x + 42, y, { size: 13, spacing: .2, opacity: .55, anchor: "left", z: z + .3 });
+  const linkText = txt("", r.x + 92, y, { size: 14, weight: 600, spacing: .06, anchor: "left", z: z + .3 });
+  slab(R(r.x + 226, r.y + 10, 1.5, r.h - 20), .5, 1, 0, MAT.rim, z);
+  const gameLamp = lamp(r.x + 250, y, z, 8);
+  txt("GAME", r.x + 266, y, { size: 13, spacing: .2, opacity: .55, anchor: "left", z: z + .3 });
+  const gameText = txt("", r.x + 322, y, { size: 14, weight: 600, spacing: .06, anchor: "left", z: z + .3 });
+  slab(R(r.x + r.w - 104, r.y + 10, 1.5, r.h - 20), .5, 1, 0, MAT.rim, z);
+  const sound = pushButton({ path: ICON.sound, box: 24 }, 30);
+  add(placeAt(sound.group, r.x + r.w - 72, y, z));
+  const gear = pushButton({ path: ICON.gear, box: 24 }, 30);
+  add(placeAt(gear.group, r.x + r.w - 30, y, z));
+  // the plate is also the swipe strip for SETUP; the two knobs sit above it
+  hit(r, { type: "plate" });
+  hit(R(r.x + r.w - 96, r.y, 48, r.h), { type: "ui", action: "sound" }, Z_HIT + 1);
+  hit(R(r.x + r.w - 52, r.y, 52, r.h), { type: "ui", action: "setup" }, Z_HIT + 1);
+  updaters.push(() => {
+    linkLamp.set(model.online ? COLOR.ok : COLOR.red, model.online || model.phase ? "on" : "dim");
+    setText(linkText, model.online ? (DEMO ? "DEMO" : "CONNECTED") : "RECONNECTING…");
+    setTextColor(linkText, model.online ? COLOR.legend : COLOR.red);
+    const g = model.game;
+    const gameLevel = !model.online || !g.telemetry ? "off" : g.active && !g.paused ? "on" : "amb";
+    gameLamp.set(gameLevel === "amb" ? COLOR.amb : COLOR.ok, gameLevel === "off" ? "off" : "on");
+    setText(gameText, !model.online ? "—" : !g.telemetry ? "NO TELEMETRY" : !g.active ? "NOT RUNNING" : g.paused ? "PAUSED" : "IN CAB");
+    sound.set(COLOR.legend, model.sound ? "dim" : "off", model.pressed.has("ui:sound"));
+    gear.set(COLOR.legend, model.setupOpen ? "dim" : "off", model.pressed.has("ui:setup"));
+  });
+}
+
+// --- LIGHTS & SIGNALS --------------------------------------------------------
+
+function lightsAndSignals(r) {
+  const { body } = zonePanel(r, "LIGHTS & SIGNALS");
+  const [lightsR, wipersR, hazardR] = rows(body, ["1fr", ".8fr", "1.2fr"]);
+
+  well(lightsR);
+  const lights = wellHeader(lightsR, "LIGHTS");
+  const lightsStatus = txt("", lights.right, lights.y, { size: 14, weight: 600, spacing: .06, anchor: "right", z: Z_WELL + .3 });
+  updaters.push(() => {
+    const lvl = level("lights");
+    setText(lightsStatus, lvl === "on" ? "LOW BEAM" : lvl === "dim" ? "PARK" : "OFF");
+    setTextColor(lightsStatus, lvl === "off" ? COLOR.legend : COLOR.amb, lvl === "off" ? .5 : 1);
+  });
+  // Lights switch positions: 0 off, 1 parking, 2 low beam. Low beam includes the parking lights.
+  const [parkR, lowR, highR] = cols(inset(lights.body, 0, 6, 6, 6), ["1fr", "1fr", "1fr"], 4);
+  toggleSwitch(parkR, { id: "lights", key: "lights:park", label: "PARK", isUp: (p) => p >= 1, flipTo: (p) => (p >= 1 ? 0 : 1) });
+  toggleSwitch(lowR, { id: "lights", key: "lights:low", label: "LOW BEAM", isUp: (p) => p === 2, flipTo: (p) => (p === 2 ? 1 : 2) });
+  tapToggle(highR, { ctl: "cab_deck_btn_002", label: "HIGH BEAM", indicator: "high_beam" });
+
+  well(wipersR);
+  const wipers = wellHeader(wipersR, "WIPERS");
+  const wipersLamp = lamp(wipers.right - 7, wipers.y, Z_WELL, 7);
+  const wipersStatus = txt("", wipers.right - 22, wipers.y, { size: 14, weight: 600, spacing: .06, anchor: "right", z: Z_WELL + .3 });
+  updaters.push(() => {
+    const s = switchStatus("wipers", "SPEED");
+    setText(wipersStatus, s.text);
+    setTextColor(wipersStatus, s.color, s.opacity ?? 1);
+    wipersLamp.set(COLOR.ok, level("wipers"));
+  });
+  slideSwitch(wipers.body, { id: "wipers", labels: ["OFF", "1", "2", "3"], subs: ["", "INT", "LOW", "HIGH"] });
+
+  buttonTile(hazardR, { ctl: "cab_deck_btn_005", label: "HAZARD", color: COLOR.red, indicator: "hazards", icon: ICON.hazard, size: 136 });
+}
+
+// Toggle face: lever in a lit ring, name under it.
+function toggleFace(r) {
+  const cx = r.x + r.w / 2, cy = r.y + r.h * .43;
+  const lever = toggleLever(cx, cy, Z_WELL, 2);
+  return { lever, lamp: { set: (color, lvl) => lever.light(color, lvl) }, labelY: r.y + r.h - 10, cx };
+}
+
+// A toggle that acts on a multi-position switch: a press sets the position the flip leads to.
+function toggleSwitch(r, spec) {
+  const face = toggleFace(r);
+  txt(spec.label, face.cx, face.labelY, { size: 13, spacing: .16, z: Z_WELL + .3 });
+  const shown = () => {
+    const pending = model.pending[spec.id];
+    return pending !== undefined ? pending : switchPosition(spec.id);
+  };
+  hit(r, { type: "switch", id: spec.id, key: spec.key, toggle: true, pos: () => spec.flipTo(Math.max(0, shown())) });
+  updaters.push(() => {
+    const s = shown(), up = s >= 0 && spec.isUp(s), pending = model.pending[spec.id] !== undefined;
+    face.lever.show(up);
+    face.lamp.set(COLOR.ok, up ? (pending ? "dim" : "on") : "off");
+  });
+}
+
+// A toggle for an on/off tap control (high beam): a flip sends one tap, the lever shows the game's
+// state. It flips at once and waits up to TAP_FLIP_MS for the game to agree.
+function tapToggle(r, spec) {
+  const face = toggleFace(r);
+  txt(spec.label, face.cx, face.labelY, { size: 13, spacing: .16, z: Z_WELL + .3 });
+  let flip = null;   // { up, until, from }
+  const onPress = () => {
+    const now = level(spec.indicator) === "on";
+    flip = { up: !(flip ? flip.up : now), until: performance.now() + TAP_FLIP_MS, from: now };
+  };
+  hit(r, { type: "ctl", ctl: spec.ctl, kind: "tap", toggle: true, onPress });
+  updaters.push(() => {
+    const now = level(spec.indicator) === "on";
+    if (flip && (now !== flip.from || performance.now() > flip.until)) flip = null;
+    const up = flip ? flip.up : now;
+    face.lever.show(up);
+    face.lamp.set(COLOR.ok, up ? (flip ? "dim" : "on") : "off");
+  });
+}
+
+// --- Slide lever (wipers), like the heater levers of a Peterbilt 379: a chrome paddle on a
+// stem that runs along a slot and clicks into a detent at each position. Drag it, or tap
+// anywhere along the strip: it jumps to the finger and snaps to the nearest detent.
+let SLIDE_GEO = null;
+function slideGeometry() {
+  return SLIDE_GEO ||= {
+    stem: new THREE.CylinderGeometry(2.6, 3, 15, 24).rotateX(PI / 2).translate(0, 0, 7.5),
+    paddle: slabGeometry(24, 38, 9, 8, 2.6).translate(0, 0, 13),
+    stripe: new THREE.BoxGeometry(3, 22, .6).translate(0, 0, 21.2),
+  };
+}
+
+function slideSwitch(r, spec) {
+  const geo = slideGeometry();
+  const count = spec.labels.length;
+  const x0 = r.x + 42, x1 = r.x + r.w - 42, slotY = r.y + r.h * .58;
+  const xAt = (position) => x0 + (x1 - x0) * position / (count - 1);
+
+  // the slot: a dark channel in a satin frame, with a notch under every detent
+  const slot = R(x0 - 18, slotY - 7, x1 - x0 + 36, 14);
+  slab(slot, 7, .4, .1, MAT.slot, Z_WELL);
+  frame(inset(slot, -2.5), 9, 2.5, 1.6, MAT.rim, Z_WELL);
+
+  const marks = spec.labels.map((labelText, position) => {
+    const x = xAt(position);
+    slab(R(x - 1, slotY + 12, 2, 7), .5, 1, 0, MAT.rim, Z_WELL);
+    const led = lamp(x, slotY + 29, Z_WELL, 3.2);
+    const label = txt(labelText, x, slotY - 30, { size: labelText.length > 1 ? 15 : 19, weight: 600, spacing: .06, z: Z_WELL + .3 });
+    const sub = spec.subs[position] ? txt(spec.subs[position], x, slotY - 47, { size: 10, weight: 600, spacing: .1, opacity: .4, z: Z_WELL + .3 }) : null;
+    return { led, label, sub, position };
+  });
+
+  const lever = new THREE.Group();
+  const stripeMat = emissiveMaterial(0x3a2a10, .3);
+  lever.add(shade(new THREE.Mesh(geo.stem, MAT.shaft)), shade(new THREE.Mesh(geo.paddle, MAT.lever)), new THREE.Mesh(geo.stripe, stripeMat));
+  add(placeAt(lever, xAt(0), slotY, Z_WELL));
+  glowing(stripeMat, { strength: { on: 2.4 } }).set(COLOR.amb, "on");
+  hit(r, { type: "slide", id: spec.id, x0, x1, count });
+
+  let shownX = null;
+  updaters.push(() => {
+    const current = switchPosition(spec.id);
+    const pending = model.pending[spec.id];
+    const drag = model.drag && model.drag.id === spec.id ? model.drag : null;
+    const shown = drag ? drag.position : pending !== undefined ? pending : Math.max(0, current);
+    // while a finger holds it the lever follows the finger; otherwise it snaps into its detent
+    const x = drag ? drag.x : xAt(shown);
+    if (x !== shownX) {
+      const worldX = x - W / 2;
+      if (drag || shownX === null) { gsap.killTweensOf(lever.position); lever.position.x = worldX; invalidate(); }
+      else tween(lever.position, { x: worldX, duration: .3, ease: "back.out(2.2)", overwrite: true });
+      shownX = x;
+    }
+    for (const mark of marks) {
+      const active = mark.position === shown && current >= 0;
+      const confirmed = active && !drag && pending === undefined;
+      mark.led.set(COLOR.amb, confirmed ? "on" : active ? (model.phase ? "on" : "dim") : "off");
+      setTextColor(mark.label, confirmed ? COLOR.amb : active ? COLOR.ambLit : COLOR.legend, active ? 1 : .5);
+      if (mark.sub) setTextColor(mark.sub, COLOR.legend, active ? .85 : .4);
+    }
+  });
+}
+
+// --- ENGINE & AIR --------------------------------------------------------------
+
+function engineAndAir(r) {
+  const { body } = zonePanel(r, "ENGINE & AIR");
+  const [knobsR, engineR, airR] = rows(body, ["1fr", "1.1fr", "1fr"]);
+  engineButton(engineR);
+  const [parkR, trailerR] = cols(knobsR, ["1fr", "1fr"], 6);
+  pullKnobTile(parkR, { ctl: "cab_deck_btn_009", label: "PARK BRAKE", color: COLOR.red, indicator: "park_brake", pulledWhenOn: true,
+    form: "diamond", symbol: "P", capColor: 0xe3b52c, ink: "#2E2104" });
+  pullKnobTile(trailerR, { ctl: "cab_deck_btn_010", label: "TRAILER AIR", color: COLOR.ok, indicator: "trailer", pulledWhenOn: false,
+    form: "octagon", symbol: "AIR", capColor: 0xc83a2e, ink: "#FFF1EC" });
+  airGauge(airR);
+}
+
+// ENGINE, PARK BRAKE and TRAILER AIR are the big controls and share one size.
+const BIG_CONTROL = 96;
+
+function engineButton(r) {
+  // One START/STOP button: dark when off, amber with ignition, green while the engine runs.
+  const ctl = "cab_deck_btn_008";
+  const size = Math.min(BIG_CONTROL, r.h - 40);
+  const top = r.y + (r.h - size - 22) / 2;
+  const button = pushButton({ text: ["START", "STOP"] }, size, { halo: true });
+  add(placeAt(button.group, r.x + r.w / 2, top + size / 2, Z_FACE));
+  txt("ENGINE", r.x + r.w / 2, top + size + 15, { size: 13, spacing: .16 });
+  hit(r, { type: "ctl", ctl, kind: "button" });
+  updaters.push(() => {
+    const lvl = level("engine"), color = lvl === "on" ? COLOR.ok : COLOR.amb;
+    button.set(color, lvl === "off" ? "off" : "dim", model.pressed.has(ctl), color, lvl === "off" ? "off" : "on");
+  });
+}
+
+function pullKnobTile(r, spec) {
+  const size = Math.min(BIG_CONTROL, r.h - 28, r.w - 4);
+  const top = r.y + (r.h - size - 22) / 2;
+  const knob = pullKnob(spec, r.x + r.w / 2, top + size / 2, Z_FACE, size);
+  const name = txt(spec.label, r.x + r.w / 2, top + size + 15, { size: 12, spacing: .1 });
+  hit(r, { type: "ctl", ctl: spec.ctl, kind: "tap" });
+  updaters.push(() => {
+    const on = level(spec.indicator) === "on";
+    knob.set(spec.pulledWhenOn ? on : !on, model.pressed.has(spec.ctl), on);
+    setTextColor(name, on ? spec.color : COLOR.legend);
+  });
+}
+
+function airGauge(r) {
+  well(r);
+  const d = Math.min(116, r.h - 10), radius = d / 2 - 7;
+  const cx = r.x + 6 + d / 2, cy = r.y + r.h / 2;
+  const group = new THREE.Group();
+  dialBezel(group, radius);
+  dialFace(group, radius, dialTexture({ red: 60 }));
+  const needleShape = new THREE.Shape([new THREE.Vector2(-2, -radius * .16), new THREE.Vector2(2, -radius * .16), new THREE.Vector2(.7, radius * .82), new THREE.Vector2(-.7, radius * .82)]);
+  const needleMat = emissiveMaterial(0xe2463c, .35);
+  needleMat.emissive.set(COLOR.red).multiplyScalar(1.4);
+  const needle = new THREE.Group();
+  needle.add(shade(new THREE.Mesh(new THREE.ExtrudeGeometry(needleShape, { depth: .8, bevelEnabled: true, bevelThickness: .3, bevelSize: .3, bevelSegments: 2 }), needleMat)));
+  needle.position.z = 3.5;
+  group.add(needle);
+  hub(group, 6.5, 5.5);
+  add(placeAt(group, cx, cy, Z_WELL));
+
+  const x0 = cx + d / 2 + 10, colW = r.x + r.w - x0 - 6;
+  txt("AIR", x0, r.y + 18, { size: 13, weight: 600, spacing: .02, anchor: "left", z: Z_WELL + .3 });
+  txt("PRESSURE", x0, r.y + 32, { size: 13, weight: 600, spacing: .02, anchor: "left", z: Z_WELL + .3 });
+  slab(R(x0, r.y + 46, colW, 24), 4, 1, .3, MAT.cell, Z_WELL);
+  const digits = txt("", x0 + colW / 2, r.y + 58, { size: 15, weight: 600, spacing: .04, z: Z_WELL + 1.3 });
+  const lowLamp = lamp(x0 + 7, r.y + 86, Z_WELL, 6);
+  const lowText = txt("LOW AIR", x0 + 18, r.y + 86, { size: 10, spacing: .06, anchor: "left", z: Z_WELL + .3 });
+  const state = txt("", x0, r.y + r.h - 14, { size: 12, weight: 600, spacing: .02, anchor: "left", z: Z_WELL + .3 });
+  const ang = (v) => -120 + Math.max(0, Math.min(150, v)) / 150 * 240;
+  let shownValue = null;
+  updaters.push(() => {
+    const indicator = model.online ? model.indicators.air_pressure : null;
+    const value = indicator ? indicator.value : 0;
+    const kind = indicator ? indicator.state : "off";
+    const emergency = kind === "emergency", warning = kind === "warning";
+    if (shownValue === null || Math.abs(value - shownValue) > .3) {
+      const target = -ang(value) * DEG;
+      if (shownValue === null) {
+        // self-test on start: the needle sweeps to full scale and settles on the reading
+        needle.rotation.z = -ang(0) * DEG;
+        gsap.timeline({ delay: .5, onUpdate: invalidate })
+          .to(needle.rotation, { z: -ang(150) * DEG, duration: .7, ease: "power2.inOut" })
+          .to(needle.rotation, { z: target, duration: .9, ease: "power3.out" });
+      } else tween(needle.rotation, { z: target, duration: .7, ease: "power3.out", overwrite: true });
+      shownValue = value;
+    }
+    setText(digits, indicator ? `${Math.round(value)} psi` : "--- psi");
+    setTextColor(digits, emergency ? COLOR.red : warning ? COLOR.amb : COLOR.white);
+    lowLamp.set(emergency ? COLOR.red : COLOR.amb, emergency ? (model.phase ? "on" : "dim") : warning ? "on" : "off");
+    setTextColor(lowText, emergency ? COLOR.red : warning ? COLOR.amb : COLOR.legend, emergency || warning ? 1 : .3);
+    setText(state, !indicator ? "—" : emergency ? "EMERGENCY" : warning ? "WARNING" : "NORMAL");
+    setTextColor(state, emergency ? COLOR.red : warning ? COLOR.amb : COLOR.ok);
+  });
+}
+
+// --- CLOCK -----------------------------------------------------------------------
+
+function pad2(value) { return String(value).padStart(2, "0"); }
+
+function analogClock(cx, cy, d, handColor, withSeconds) {
+  const radius = d / 2 - 7;
+  const group = new THREE.Group();
+  dialBezel(group, radius);
+  dialFace(group, radius, clockFace());
+  const handMat = new THREE.MeshPhysicalMaterial({ color: handColor, roughness: .35, metalness: .2, clearcoat: .6, emissive: handColor, emissiveIntensity: .25 });
+  const hour = hand(group, 5, radius * .5, 6, 1.4, 2.2, handMat);
+  const minute = hand(group, 3, radius * .76, 8, 1.1, 3.4, handMat);
+  let second = null;
+  if (withSeconds) {
+    const secondMat = emissiveMaterial(0xe2463c, .3);
+    secondMat.emissive.set(COLOR.red).multiplyScalar(1.2);
+    second = hand(group, 1.5, radius * .84, 14, .7, 4.6, secondMat);
+  }
+  hub(group, 5.5, 5.8);
+  add(placeAt(group, cx, cy, Z_FACE));
+  let shown = null;
+  return {
+    set(minutes, seconds) {
+      // minutes since midnight (may be fractional); null hides the hands
+      const visible = minutes !== null;
+      if (visible !== shown) {
+        shown = visible;
+        for (const h of [hour, minute, second]) if (h) h.visible = visible;
+        invalidate();
+      }
+      if (!visible) return;
+      turnTo(hour, -(minutes / 720) * PI * 2, { duration: .5, ease: "power2.out" });
+      turnTo(minute, -((minutes % 60) / 60) * PI * 2, { duration: .5, ease: "power2.out" });
+      // quartz tick: a quick step with a small overshoot
+      if (second) turnTo(second, -(seconds / 60) * PI * 2, { duration: .22, ease: "back.out(3)" });
+    },
+  };
+}
+
+let CLOCK_FACE = null;
+function clockFace() { return CLOCK_FACE ||= dialTexture({ clock: true }); }
+
+function clockHalf(r, tag, tagColor, handColor, withSeconds, withWeek) {
+  const d = Math.min(132, r.h - (withWeek ? 34 : 0));
+  const clock = analogClock(r.x + d / 2, r.y + d / 2, d, handColor, withSeconds);
+  const x0 = r.x + d + 16;
+  const tagMat = emissiveMaterial(0x0b1410, .5);
+  slab(R(x0, r.y + 10, 78, 20), 4, 1.2, .3, tagMat, Z_FACE);
+  glowing(tagMat, { baseOff: 0x0b1410, strength: { on: .35 } }).set(tagColor, "on");
+  txt(tag, x0 + 39, r.y + 20, { size: 11, spacing: .16, color: tagColor, z: Z_FACE + 1.5 });
+  const digital = txt("--:--", x0, r.y + 58, { size: 36, weight: 700, spacing: .02, anchor: "left", color: COLOR.white });
+  const note = txt("", x0, r.y + 90, { size: 11, spacing: .1, anchor: "left", opacity: .5 });
+  const week = withWeek ? weekStrip(R(r.x, r.y + d + 8, r.w, 24)) : null;
+  return { clock, digital, note, week };
+}
+
+function weekStrip(r) {
+  // Monday..Sunday; set(today, due) lights today and underlines the delivery day. -1 = none.
+  const cells = cols(r, Array(7).fill("1fr"), 4).map((cr, i) => {
+    const mat = emissiveMaterial(0x0b1712, .5);
+    slab(cr, 5, 1.6, .4, mat, Z_FACE);
+    const letter = txt("MTWTFSS"[i], cr.x + cr.w / 2, cr.y + cr.h / 2, { size: 13, opacity: .4, z: Z_FACE + 1.9 });
+    const barMat = emissiveMaterial(0x0b1712, .4);
+    const bar = slab(R(cr.x + 3, cr.y + cr.h + 3, cr.w - 6, 3), 1.5, 1, .2, barMat, Z_FACE);
+    bar.visible = false;
+    return { glow: glowing(mat, { baseOff: 0x0b1712, strength: { on: 1.6, off: 0 } }), letter, bar, barGlow: glowing(barMat, { strength: { on: 2.4 } }) };
+  });
+  return {
+    set(today, due = -1) {
+      cells.forEach((cell, i) => {
+        cell.glow.set(COLOR.amb, i === today ? "on" : "off");
+        setTextColor(cell.letter, i === today ? "#2A1A04" : COLOR.legend, i === today ? 1 : .4);
+        if (cell.bar.visible !== (i === due)) { cell.bar.visible = i === due; invalidate(); }
+        cell.barGlow.set(COLOR.ok, "on");
+      });
+    },
+  };
+}
+
+function clockZone(r) {
+  // Game time: in-game minutes since 00:00 of day 1, which is a Monday. Real time: this tablet.
+  const { body } = zonePanel(r, "CLOCK", { titleH: 22, gap: 8 });
+  const [gameR, sepR, realR] = cols(inset(body, 0, 6, 0, 6), ["1fr", 2, "1fr"], 14);
+  slab(R(sepR.x, sepR.y + 6, 1.5, sepR.h - 12), .5, 1, 0, MAT.rim, Z_FACE);
+  const game = clockHalf(gameR, "IN-GAME", COLOR.amb, COLOR.amb, false, true);
+  const real = clockHalf(realR, "REAL TIME", COLOR.blu, COLOR.white, true, false);
+  updaters.push(() => {
+    const nav = model.online && model.game.telemetry && model.game.active ? model.indicators.nav : null;
+    if (nav && nav.clock_min > 0) {
+      const minutes = nav.clock_min % 1440;
+      game.clock.set(minutes, 0);
+      setText(game.digital, `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`);
+      // the deadline day only while it is ahead and within the coming week
+      const due = nav.deadline_min !== null && nav.deadline_min >= 0 && nav.deadline_min < 7 * 1440
+        ? Math.floor((nav.clock_min + nav.deadline_min) / 1440) % 7 : -1;
+      game.week.set(Math.floor(nav.clock_min / 1440) % 7, due);
+      setText(game.note, model.game.paused ? "PAUSED" : "");
+    } else {
+      game.clock.set(null, 0);
+      setText(game.digital, "--:--");
+      game.week.set(-1);
+      setText(game.note, !model.online ? "NO LINK" : !model.game.telemetry ? "NO TELEMETRY" : "NOT IN CAB");
+    }
+    const now = new Date();
+    real.clock.set(now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60, now.getSeconds());
+    setText(real.digital, `${pad2(now.getHours())}:${pad2(now.getMinutes())}`);
+  });
+}
+
+// --- CAB & ACTION -------------------------------------------------------------
+
+const CAB_BUTTON = 78;   // every CAB & ACTION button except ACTIVATE
+
+function cabZone(r) {
+  // ACTIVATE glows amber at rest and flares on a press; hold buttons light while held.
+  const held = (ctl) => () => (model.pressed.has(ctl) ? "on" : "off");
+  const { body } = zonePanel(r, "CAB & ACTION");
+  const [c0, c1, c2, c3] = cols(body, ["1.25fr", "1fr", "1fr", "1fr"]);
+  const [r0, r1] = rows(body, ["1fr", "1fr"]);
+  const cell = (c, rr) => R(c.x, rr.y, c.w, rr.h);
+  buttonTile(c0, { ctl: "cab_deck_btn_023", kind: "button", label: "ACTIVATE", color: COLOR.amb, icon: ICON.activate, iconBox: 24, size: 104,
+    level: () => (model.activateFlash ? "on" : "dim") });
+  buttonTile(cell(c1, r0), { ctl: "cab_deck_btn_020", label: "BEACON", color: COLOR.org, indicator: "beacon", icon: ICON.beacon, size: CAB_BUTTON });
+  buttonTile(cell(c2, r0), { ctl: "cab_deck_btn_021", label: "FRONT AUX", color: COLOR.amb, indicator: "aux_front", icon: ICON.auxFront, size: CAB_BUTTON });
+  buttonTile(cell(c3, r0), { ctl: "cab_deck_btn_022", label: "ROOF AUX", color: COLOR.amb, indicator: "aux_roof", icon: ICON.auxRoof, size: CAB_BUTTON });
+  buttonTile(cell(c1, r1), { ctl: "cab_deck_btn_011", kind: "hold", label: "WIN DOWN", color: COLOR.amb, icon: ICON.chevronDown, iconBox: 24, size: CAB_BUTTON, level: held("cab_deck_btn_011") });
+  buttonTile(cell(c2, r1), { ctl: "cab_deck_btn_012", kind: "hold", label: "WIN UP", color: COLOR.amb, icon: ICON.chevronUp, iconBox: 24, size: CAB_BUTTON, level: held("cab_deck_btn_012") });
+  buttonTile(cell(c3, r1), { ctl: "cab_deck_btn_007", kind: "hold", label: "HORN", color: COLOR.amb, icon: ICON.horn, size: CAB_BUTTON, level: held("cab_deck_btn_007") });
+}
+
+// --- NAV ----------------------------------------------------------------------------
+
+function duration(minutes) {
+  const total = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(total / 60), rest = total % 60;
+  return hours ? `${hours}h ${pad2(rest)}m` : `${rest}m`;
+}
+
+function clockText(minutes) {
+  const day = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"][Math.floor(minutes / 1440) % 7];
+  const time = minutes % 1440;
+  return `${day} ${pad2(Math.floor(time / 60))}:${pad2(time % 60)}`;
+}
+
+function navCell(r, caption, big) {
+  slab(r, 8, 1.2, .4, MAT.cell, Z_FACE);
+  const z = Z_FACE + 1.5;
+  txt(caption, r.x + 10, r.y + 16, { size: 12, spacing: .18, opacity: .5, anchor: "left", z });
+  const value = txt("", r.x + 10, r.y + r.h * .52, { size: big ? 34 : 26, spacing: .01, anchor: "left", color: COLOR.white, z });
+  const sub = txt("", r.x + 10, r.y + r.h - 14, { size: 12, weight: 600, spacing: .06, anchor: "left", opacity: .5, z });
+  return { value, sub };
+}
+
+function navZone(r) {
+  // Route distance comes in metres and route time in in-game seconds; job times in in-game minutes.
+  const MI_PER_M = 0.000621371, MI_PER_KM = 0.621371;
+  const zone = zonePanel(r, "NAV", { titleH: 22, gap: 6, status: true, withLamp: true });
+  const [distR, etaR, restR, dueR, planR] = cols(zone.body, ["1.1fr", "1fr", "1fr", "1fr", "2.7fr"], 6);
+  const dist = navCell(distR, "TO GO", true), eta = navCell(etaR, "ETA"), rest = navCell(restR, "REST IN"), due = navCell(dueR, "DELIVERY");
+  const plan = planCell(planR);
+  const nav = () => (model.online ? model.indicators.nav : null);
+  updaters.push(() => {
+    const n = nav();
+    if (!n) { setText(zone.status, "—"); setTextColor(zone.status, COLOR.legend, .5); }
+    else if (n.destination) { setText(zone.status, `→ ${n.destination.toUpperCase()}`); setTextColor(zone.status, COLOR.legend); }
+    else { setText(zone.status, n.distance_m > 0 ? "FREE ROUTE" : "NO ROUTE"); setTextColor(zone.status, COLOR.legend, .5); }
+    const hasRoute = n && n.distance_m > 0;
+    setText(dist.value, hasRoute ? String(Math.round(n.distance_m * MI_PER_M)) : "---");
+    setText(dist.sub, n && n.planned_km ? `MI · OF ${Math.round(n.planned_km * MI_PER_KM)}` : "MI");
+    setText(eta.value, hasRoute ? duration(n.time_s / 60) : "—");
+    setText(eta.sub, hasRoute ? clockText(n.clock_min + Math.round(n.time_s / 60)) : "");
+    const tired = n && n.rest_min <= 60;
+    setText(rest.value, n ? duration(n.rest_min) : "—");
+    setTextColor(rest.value, tired ? COLOR.amb : COLOR.white);
+    // miles left before the rest stop, from the server's average pace over the last 50 mi
+    if (!n || n.rest_min <= 0) setText(rest.sub, "");
+    else if (n.rest_range_km === null || n.rest_range_km === undefined) setText(rest.sub, "MEASURING…");
+    else setText(rest.sub, `≈ ${Math.round(n.rest_range_km * MI_PER_KM)} MI`);
+    setTextColor(rest.sub, COLOR.legend, n && n.rest_range_km ? 1 : .5);
+    const late = n && n.deadline_min !== null && n.deadline_min < 0;
+    const tight = n && n.deadline_min !== null && hasRoute && n.deadline_min < n.time_s / 60;
+    setText(due.value, n && n.deadline_min !== null ? (late ? `-${duration(-n.deadline_min)}` : duration(n.deadline_min)) : "—");
+    setTextColor(due.value, late ? COLOR.red : tight ? COLOR.amb : COLOR.white);
+    setText(due.sub, !n || n.deadline_min === null ? "NO JOB" : `DUE ${clockText(n.clock_min + n.deadline_min)}`);
+    plan.paint(n && n.plan);
+    zone.lamp.set(COLOR.amb, tired ? (model.phase ? "on" : "dim") : "off");
+  });
+}
+
+// PLAN: the job as a Gantt strip of shifts. Block widths follow the miles of each day: done days
+// solid, today a track that fills (tick = where you should be now), later days outlined.
+function planCell(r) {
+  slab(r, 8, 1.2, .4, MAT.cell, Z_FACE);
+  const z = Z_FACE + 1.5;
+  txt("PLAN", r.x + 10, r.y + 16, { size: 12, spacing: .18, opacity: .5, anchor: "left", z });
+  const day = txt("", r.x + r.w - 10, r.y + 16, { size: 12, spacing: .16, anchor: "right", z });
+  const status = txt("", r.x + 10, r.y + r.h - 14, { size: 15, spacing: .06, anchor: "left", z });
+  const need = txt("", r.x + r.w - 10, r.y + r.h - 14, { size: 12, weight: 600, spacing: .06, anchor: "right", opacity: .5, z });
+  const strip = R(r.x + 10, r.y + 34, r.w - 20, 20);
+  let group = null, signature = "", segments = [];
+  const mi = (km) => Math.round(km * 0.621371);
+
+  function rebuild(parts) {
+    if (group) {
+      root.remove(group);
+      group.traverse((o) => { if (o.dispose && o.isText) o.dispose(); });
+    }
+    group = new THREE.Group();
+    root.add(group);
+    const rects = cols(strip, parts.map((p) => `${Math.max(p.km, 1)}fr`), 3);
+    segments = parts.map((part, i) => {
+      const sr = rects[i];
+      const mat = emissiveMaterial(part.kind === "next" ? 0x101e17 : 0x07110c, .5);
+      const seg = place(shade(new THREE.Mesh(slabGeometry(Math.max(4, sr.w), sr.h, 4, part.kind === "past" ? 2.4 : 1.2, .3), mat)), sr, z);
+      group.add(seg);
+      const glow = glowing(mat, { baseOff: part.kind === "next" ? 0x101e17 : 0x07110c, strength: { on: .9, dim: .3, off: 0 } });
+      const out = { part, sr, glow };
+      if (part.kind === "today") {
+        out.fillMat = emissiveMaterial(0x07110c, .3);
+        out.fill = new THREE.Mesh(UNIT_BOX, out.fillMat);
+        out.fill.position.z = z + 2.2;
+        out.fillGlow = glowing(out.fillMat, { strength: { on: 2.2 } });
+        out.now = new THREE.Mesh(UNIT_BOX, new THREE.MeshBasicMaterial({ color: COLOR.legend }));
+        out.now.scale.set(2, sr.h + 4, 1);
+        out.now.position.z = z + 3.2;
+        out.frac = { v: 0 };
+        group.add(out.fill, out.now);
+      }
+      const labelText = new Text();
+      Object.assign(labelText, { font: FONTS[700], fontSize: 11, letterSpacing: .04, anchorX: "left", anchorY: "middle", color: COLOR.legend, fillOpacity: part.kind === "today" ? 1 : .5, maxWidth: Math.max(10, sr.w) });
+      placeAt(labelText, sr.x, sr.y + sr.h + 12, z);
+      labelText.sync(invalidate);
+      group.add(labelText);
+      out.label = labelText;
+      return out;
+    });
+    invalidate();
+  }
+
+  return {
+    paint(p) {
+      const parts = !p ? [] : [
+        ...p.past_km.map((km) => ({ kind: "past", km })),
+        { kind: "today", km: Math.max(p.target_km, p.done_km) },
+        ...p.next_km.map((km) => ({ kind: "next", km })),
+      ];
+      const sig = parts.map((x) => `${x.kind}${Math.round(x.km)}`).join("|");
+      if (sig !== signature) { signature = sig; rebuild(parts); }
+      const behind = p && !p.late && p.ahead_km < -0.1 * p.target_km;
+      const accent = !p ? COLOR.ok : p.late ? COLOR.red : behind ? COLOR.amb : COLOR.ok;
+      for (const s of segments) {
+        if (s.part.kind === "past") s.glow.set(COLOR.ok, "dim");
+        else if (s.part.kind === "today") {
+          s.glow.set(accent, p.late ? "dim" : "off");
+          const span = Math.max(s.part.km, 1), expected = p.done_km - p.ahead_km;
+          const frac = Math.min(1, p.done_km / span);
+          if (Math.abs(frac - s.frac.v) > .002) {
+            tween(s.frac, { v: frac, duration: .6, ease: "power2.out", overwrite: true, onUpdate: () => {
+              const w = Math.max(.01, s.sr.w * s.frac.v);
+              s.fill.scale.set(w, s.sr.h - 6, 1.5);
+              placeAt(s.fill, s.sr.x + w / 2, s.sr.y + s.sr.h / 2, s.fill.position.z);
+            } });
+          }
+          s.fillGlow.set(accent, "on");
+          placeAt(s.now, s.sr.x + Math.max(0, Math.min(1, expected / span)) * s.sr.w, s.sr.y + s.sr.h / 2, s.now.position.z);
+          setText(s.label, `${mi(p.done_km)} / ${mi(p.target_km)}`);
+        } else {
+          s.glow.set(COLOR.ok, "off");
+        }
+        if (s.part.kind !== "today") setText(s.label, String(mi(s.part.km)));
+      }
+      setText(day, p ? `DAY ${p.day} / ${p.days}` : "");
+      setText(status, !p ? "NO JOB" : p.late ? "PAST DEADLINE" : p.ahead_km >= 0 ? `+${mi(p.ahead_km)} MI AHEAD` : `${mi(-p.ahead_km)} MI BEHIND`);
+      setTextColor(status, !p ? COLOR.legend : accent, !p ? .5 : 1);
+      setText(need, p && p.required_kmh ? `NEED ${mi(p.required_kmh)} MPH AVG` : "");
+    },
+  };
+}
+
+// --- FUEL -----------------------------------------------------------------------------
+
+function fuelZone(r) {
+  // ATS shows imperial units; the SDK reports litres, km and litres per km.
+  const MI_PER_KM = 0.621371, GAL_PER_L = 0.264172;
+  const zone = zonePanel(r, "FUEL", { titleH: 22, gap: 6, status: true, withLamp: true });
+  const b = inset(zone.body, 0, 6, 0, 6);
+  txt("RANGE", b.x, b.y + 8, { size: 12, spacing: .18, opacity: .5, anchor: "left" });
+  const range = txt("---", b.x, b.y + 38, { size: 40, spacing: .02, anchor: "left", color: COLOR.white });
+  const unit = txt("MI", b.x + 2, b.y + 38, { size: 15, spacing: .12, anchor: "left", opacity: .5 });
+  const sideX = b.x + b.w;
+  txt("TANK", sideX - 92, b.y + 8, { size: 12, spacing: .18, opacity: .5, anchor: "right" });
+  const tank = txt("— gal", sideX, b.y + 8, { size: 14, weight: 600, spacing: .04, anchor: "right" });
+  txt("AVG", sideX - 92, b.y + 30, { size: 12, spacing: .18, opacity: .5, anchor: "right" });
+  const avg = txt("— mpg", sideX, b.y + 30, { size: 14, weight: 600, spacing: .04, anchor: "right" });
+  const track = R(b.x, b.y + 62, b.w, 22);
+  slab(track, 6, 1.2, .3, MAT.cell, Z_FACE);
+  const fillMat = emissiveMaterial(0x07110c, .3);
+  const fill = new THREE.Mesh(UNIT_BOX, fillMat);
+  fill.position.z = Z_FACE + 2.2;
+  add(fill);
+  const fillGlow = glowing(fillMat, { strength: { on: 1.9, dim: 1.2 } });
+  for (const f of [.25, .5, .75]) slab(R(track.x + track.w * f - 1, track.y + 2, 2, track.h - 4), .5, 3.4, 0, MAT.cell, Z_FACE);
+  ["E", "¼", "½", "¾", "F"].forEach((mark, i) => txt(mark, track.x + track.w * i / 4, track.y + track.h + 12, { size: 12, spacing: .1, opacity: .55, anchor: i === 0 ? "left" : i === 4 ? "right" : "center" }));
+  const frac = { v: -1 };
+  const paintFill = () => {
+    const w = Math.max(.01, (track.w - 6) * Math.max(0, frac.v));
+    fill.scale.set(w, track.h - 8, 1.5);
+    placeAt(fill, track.x + 3 + w / 2, track.y + track.h / 2, fill.position.z);
+  };
+  updaters.push(() => {
+    const fuel = model.online ? model.indicators.fuel : null;
+    const low = fuel && fuel.state === "warning";
+    const target = fuel && fuel.capacity ? Math.max(0, Math.min(1, fuel.value / fuel.capacity)) : 0;
+    if (Math.abs(target - frac.v) > .002) {
+      if (frac.v < 0) { frac.v = target; paintFill(); invalidate(); }
+      else tween(frac, { v: target, duration: .6, ease: "power2.out", overwrite: true, onUpdate: paintFill });
+    }
+    setText(range, fuel ? String(Math.round(fuel.range_km * MI_PER_KM)) : "---");
+    setTextColor(range, low ? COLOR.amb : COLOR.white);
+    // the unit follows the number; troika knows the number's width only after it is laid out
+    const box = range.textRenderInfo && range.textRenderInfo.blockBounds;
+    if (box) placeAt(unit, b.x + (box[2] - box[0]) + 8, b.y + 42, unit.position.z);
+    fillGlow.set(low ? COLOR.amb : COLOR.ok, fuel ? "on" : "off");
+    setText(tank, fuel ? `${Math.round(fuel.value * GAL_PER_L)} / ${Math.round(fuel.capacity * GAL_PER_L)} gal` : "— gal");
+    const mpg = fuel && fuel.avg_l_per_km > 0 ? MI_PER_KM / (fuel.avg_l_per_km * GAL_PER_L) : 0;
+    setText(avg, mpg ? `${mpg.toFixed(1)} mpg` : "— mpg");
+    if (!fuel) { setText(zone.status, "—"); setTextColor(zone.status, COLOR.legend, .5); }
+    else if (low) { setText(zone.status, "LOW FUEL"); setTextColor(zone.status, COLOR.amb); }
+    else { setText(zone.status, `${Math.round(fuel.capacity ? fuel.value / fuel.capacity * 100 : 0)}%`); setTextColor(zone.status, COLOR.legend); }
+    zone.lamp.set(COLOR.amb, low ? (model.phase ? "on" : "dim") : "off");
+  });
+  range.addEventListener("synccomplete", () => render());
+}
+
+// --- Offline veil -------------------------------------------------------------------------
+
+function offlineVeil(r) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthTest: false, depthWrite: false });
+  const veil = new THREE.Mesh(HIT_GEO, mat);
+  veil.scale.set(r.w, r.h, 1);
+  veil.renderOrder = 10;
+  add(place(veil, r, 60));
+  let shown = null;
+  updaters.push(() => {
+    const dim = !model.online;
+    if (dim === shown) return;
+    shown = dim;
+    tween(mat, { opacity: dim ? .66 : 0, duration: .4, overwrite: true });
+  });
+}
+
+// ===========================================================================
+// Build
+// ===========================================================================
+
+function consoleBase() {
+  // the console behind the zones: brand green, lighter at the top centre where the light falls
+  const tex = canvasTexture(512, (g, size) => {
+    const grad = g.createRadialGradient(size / 2, size * .1, 0, size / 2, size * .3, size * .9);
+    grad.addColorStop(0, "#12291F");
+    grad.addColorStop(.55, "#0A1B14");
+    grad.addColorStop(1, "#050806");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, size, size);
+  });
+  const base = new THREE.Mesh(new THREE.PlaneGeometry(W + 600, H + 600), new THREE.MeshStandardMaterial({ map: tex, roughness: .9, envMap: scene.environment, envMapIntensity: .1 }));
+  base.receiveShadow = true;
+  add(base);
+}
+
+function build() {
+  // dispose texts and geometry of the old layout; shared parts (materials, part geometry) stay
+  root.traverse((o) => { if (o.isText) o.dispose(); });
+  scene.remove(root);
+  root = new THREE.Group();
+  scene.add(root);
+  updaters = [];
+  hits = [];
+
+  // key light from the top left, shadows fall to the lower right
+  sun.position.set(-W * .3, H * .75, 1500);
+  Object.assign(sun.shadow.camera, { left: -W * .7, right: W * .7, top: H * .8, bottom: -H * .8, near: 200, far: 4000 });
+  sun.shadow.camera.updateProjectionMatrix();
+
+  consoleBase();
+  const topR = R(PAD, PAD, W - 2 * PAD, TOP_H);
+  blinker(R(topR.x, topR.y, 210, TOP_H), "left", "cab_deck_btn_003", "blinker_left");
+  blinker(R(topR.x + topR.w - 210, topR.y, 210, TOP_H), "right", "cab_deck_btn_004", "blinker_right");
+  const plateW = 590;
+  statusPlate(R(W / 2 - plateW / 2, topR.y + (TOP_H - 44) / 2, plateW, 44));
+
+  const mainY = PAD + TOP_H + GAP;
+  const mainH = H - mainY - GAP - BOTTOM_H - PAD;
+  const [colL, colM, colR] = cols(R(PAD, mainY, W - 2 * PAD, mainH), ["336fr", "233fr", "560fr"]);
+  lightsAndSignals(colL);
+  engineAndAir(colM);
+  const [clockR, cabR] = rows(colR, [236, "1fr"]);
+  clockZone(clockR);
+  cabZone(cabR);
+  const [navR, fuelR] = cols(R(PAD, H - PAD - BOTTOM_H, W - 2 * PAD, BOTTOM_H), ["7fr", "3fr"]);
+  navZone(navR);
+  fuelZone(fuelR);
+  offlineVeil(R(0, mainY - GAP / 2, W, H - mainY + GAP / 2));
+  render();
+}
+
+// ===========================================================================
+// Rendering and sizing
+// ===========================================================================
+
+let renderQueued = false;
+function render() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    for (const update of updaters) update();
+    document.getElementById("dimmer").style.opacity = String((1 - model.bright) * .8);
+  });
+}
+
+setInterval(() => { model.phase = !model.phase; render(); }, PHASE_MS);
+setInterval(render, 1000);   // real-time clock
+
+let resizeTimer = null;
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight, aspect = w / h;
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setSize(w, h, false);
+  composer.setSize(w, h);
+  const nextW = Math.max(PANEL_W, PANEL_H * aspect), nextH = Math.max(PANEL_H, PANEL_W / aspect);
+  camera.aspect = aspect;
+  gsap.killTweensOf(camera.position);
+  camera.position.set(0, 0, (nextH / 2) / Math.tan(FOV / 2 * DEG));
+  camera.lookAt(0, 0, 0);
+  camera.updateProjectionMatrix();
+  if (Math.abs(nextW - W) > .5 || Math.abs(nextH - H) > .5 || !updaters.length) {
+    W = nextW;
+    H = nextH;
+    releaseAllLocal(true);
+    build();
+  }
+  placeSetup();
+  invalidate();
+}
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(resize, 120);
+});
+
+// ===========================================================================
+// SETUP (HTML)
+// ===========================================================================
+
+const setupEl = document.getElementById("setup");
+const brightEl = document.getElementById("bright");
+brightEl.value = String(model.bright);
+brightEl.addEventListener("input", () => {
+  model.bright = Number(brightEl.value);
+  writeStored(STORAGE.bright, model.bright);
+  render();
+});
+
+function placeSetup() {
+  // cover the dash below the top row, in screen pixels
+  const s = window.innerHeight / H;
+  Object.assign(setupEl.style, { left: `${PAD * s}px`, right: `${PAD * s}px`, top: `${(PAD + TOP_H + GAP) * s}px`, bottom: `${PAD * s}px` });
+}
+
+function buildSetup(bindings) {
+  const list = document.getElementById("binds");
+  list.replaceChildren(...bindings.map((binding) => {
+    const part = binding.part === "forward" ? " ▶" : binding.part === "back" ? " ◀" : "";
+    const tile = document.createElement("div");
+    tile.className = "bind";
+    tile.dataset.key = binding.key;
+    tile.innerHTML = `<div class="num"></div><div class="game"></div><div class="what"></div><div class="act"></div>`;
+    tile.querySelector(".num").textContent = `vJoy ${binding.number}`;
+    tile.querySelector(".game").textContent = `GAME BUTTON ${binding.number - 1}`;
+    tile.querySelector(".what").textContent = binding.label + part;
+    tile.querySelector(".act").textContent = binding.action || "";
+    return tile;
+  }));
+}
+
+function pressable(el, onPress) {
+  el.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    el.classList.add("pressed");
+    onPress(event);
+  });
+  for (const type of ["pointerup", "pointercancel", "pointerleave"]) el.addEventListener(type, () => el.classList.remove("pressed"));
+}
+
+document.getElementById("binds").addEventListener("pointerdown", (event) => {
+  const tile = event.target.closest(".bind");
+  if (!tile || !isOnline()) return;
+  event.preventDefault();
+  tile.classList.add("pressed");
+  click("tap");
+  send({ type: "bind", key: tile.dataset.key });
+  const clear = () => tile.classList.remove("pressed");
+  tile.addEventListener("pointerup", clear, { once: true });
+  tile.addEventListener("pointercancel", clear, { once: true });
+});
+pressable(document.getElementById("back-btn"), () => setSetupOpen(false));
+pressable(document.getElementById("fs-btn"), () => toggleFullscreen());
+
+function setSetupOpen(open) {
+  if (model.setupOpen === open) return;
+  releaseAllLocal(true);
+  model.setupOpen = open;
+  setupEl.classList.toggle("open", open);
+  haptic(HAPTIC.ui);
+  render();
+}
+
+// ===========================================================================
+// Feedback: haptics and sound
+// ===========================================================================
+
+function haptic(pattern) {
+  if (typeof navigator.vibrate !== "function") return;
+  try { navigator.vibrate(pattern); } catch (_) { /* blocked without user activation */ }
+}
+
+let audioContext = null, hornVoice = null;
+function audio() {
+  if (!audioContext) {
+    const Context = window.AudioContext || window.webkitAudioContext;
+    if (!Context) return null;
+    audioContext = new Context();
+  }
+  if (audioContext.state === "suspended") audioContext.resume();
+  return audioContext;
+}
+
+function click(kind) {
+  haptic(HAPTIC[kind] ?? 10);
+  if (!model.sound) return;
+  const c = audio();
+  if (!c) return;
+  const t = c.currentTime;
+  const frequency = { detent: 2400, toggle: 3200, tap: 1500, hold: 1100, button: 800, ui: 1900 }[kind] || 1500;
+  const length = Math.floor(c.sampleRate * 0.03);
+  const buffer = c.createBuffer(1, length, c.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
+  const source = c.createBufferSource();
+  source.buffer = buffer;
+  const filter = c.createBiquadFilter();
+  filter.type = "bandpass";
+  filter.frequency.value = frequency;
+  filter.Q.value = kind === "detent" ? 3 : 1.4;
+  const gain = c.createGain();
+  gain.gain.setValueAtTime(kind === "detent" ? 0.3 : 0.4, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + (kind === "detent" ? 0.04 : 0.07));
+  source.connect(filter); filter.connect(gain); gain.connect(c.destination);
+  source.start(t);
+  if (kind === "detent") return;
+  const thump = c.createOscillator();
+  thump.type = "sine";
+  thump.frequency.setValueAtTime(kind === "button" ? 120 : 160, t);
+  thump.frequency.exponentialRampToValueAtTime(50, t + 0.07);
+  const thumpGain = c.createGain();
+  thumpGain.gain.setValueAtTime(kind === "button" ? 0.3 : 0.18, t);
+  thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+  thump.connect(thumpGain); thumpGain.connect(c.destination);
+  thump.start(t); thump.stop(t + 0.12);
+}
+
+function hornOn() {
+  if (!model.sound || hornVoice) return;
+  const c = audio();
+  if (!c) return;
+  const gain = c.createGain();
+  gain.gain.setValueAtTime(0.0001, c.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.12, c.currentTime + 0.08);
+  const filter = c.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.value = 900;
+  filter.connect(gain); gain.connect(c.destination);
+  const oscillators = [110, 165, 220].map((f) => {
+    const o = c.createOscillator();
+    o.type = "sawtooth"; o.frequency.value = f; o.connect(filter); o.start();
+    return o;
+  });
+  hornVoice = { oscillators, gain };
+}
+
+function hornOff() {
+  if (!hornVoice) return;
+  const { oscillators, gain } = hornVoice;
+  gain.gain.setTargetAtTime(0.0001, audioContext.currentTime, 0.04);
+  oscillators.forEach((o) => o.stop(audioContext.currentTime + 0.25));
+  hornVoice = null;
+}
+
+// ===========================================================================
+// Connection
+// ===========================================================================
+
+function connect() {
+  reconnectTimer = null;
+  const scheme = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${scheme}://${location.host}/ws`);
+  socket = ws;
+  ws.onopen = () => {
+    lastPong = Date.now();
+    reconnectDelay = RECONNECT_MIN_MS;
+    model.online = true;
+    flushErrors();
+    render();
+  };
+  ws.onmessage = (event) => handleMessage(event.data);
+  ws.onclose = () => dropSocket(ws);
+  ws.onerror = () => dropSocket(ws);
+}
+
+function dropSocket(ws) {
+  if (socket !== ws) return;
+  socket = null;
+  ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+  try { ws.close(); } catch (_) { /* already closed */ }
+  releaseAllLocal(false);
+  if (model.online) haptic(HAPTIC.linkLost);
+  model.online = false;
+  model.pending = {};
+  render();
+  if (reconnectTimer === null) {
+    reconnectTimer = setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
+  }
+}
+
+function isOnline() {
+  if (DEMO) return model.online;
+  return socket !== null && socket.readyState === WebSocket.OPEN;
+}
+
+function send(message) {
+  if (DEMO) { demo.receive(message); return; }
+  if (isOnline()) socket.send(JSON.stringify(message));
+}
+
+function handleMessage(data) {
+  const message = JSON.parse(data);
+  if (message.type === "pong") lastPong = Date.now();
+  else if (message.type === "layout") buildSetup(message.bindings || []);
+  else if (message.type === "state") applyState(message);
+  render();
+}
+
+function applyState(state) {
+  model.game = state.game || { telemetry: false };
+  model.indicators = state.indicators || {};
+  model.switches = state.switches || {};
+  for (const [id, position] of Object.entries(model.switches)) {
+    // one tick per detent the switch actually passes
+    if (lastSwitches[id] !== undefined && lastSwitches[id] !== position) haptic(HAPTIC.tick);
+    if (model.pending[id] === position) clearPending(id);
+  }
+  lastSwitches = model.switches;
+}
+
+function setPending(id, position) {
+  clearTimeout(pendingTimers[id]);
+  model.pending[id] = position;
+  pendingTimers[id] = setTimeout(() => { clearPending(id); render(); }, PENDING_TIMEOUT_MS);
+}
+
+function clearPending(id) {
+  clearTimeout(pendingTimers[id]);
+  delete model.pending[id];
+}
+
+setInterval(() => {
+  if (DEMO || !isOnline()) return;
+  if (Date.now() - lastPong > PONG_TIMEOUT_MS) { dropSocket(socket); return; }
+  send({ type: "ping" });
+}, PING_INTERVAL_MS);
+
+// ===========================================================================
+// Touch: a ray from the finger finds the touch area under it
+// ===========================================================================
+
+const raycaster = new THREE.Raycaster();
+const pointerNdc = new THREE.Vector2();
+const hitPoint = new THREE.Vector3();
+
+function aim(event) {
+  const rect = canvas.getBoundingClientRect();
+  pointerNdc.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+  raycaster.setFromCamera(pointerNdc, camera);
+}
+
+function pick(event) {
+  aim(event);
+  const found = raycaster.intersectObjects(hits, false)[0];
+  return found ? found.object.userData : null;
+}
+
+// Where the finger meets the plane z (in layout coordinates).
+function pointOnPlane(event, z) {
+  aim(event);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z);
+  if (!raycaster.ray.intersectPlane(plane, hitPoint)) return null;
+  return { x: hitPoint.x + W / 2, y: H / 2 - hitPoint.y };
+}
+
+function keyInUse(key) {
+  for (const entry of activePointers.values()) if (entry.key === key) return true;
+  return false;
+}
+
+let plateSwipe = null;
+
+canvas.addEventListener("pointerdown", (event) => {
+  if (event.button > 0) return;
+  const target = pick(event);
+  if (!target) return;
+  event.preventDefault();
+
+  if (target.type === "ui") {
+    if (target.action === "sound") {
+      model.sound = !model.sound;
+      writeStored(STORAGE.sound, model.sound);
+      haptic(HAPTIC.ui);
+      if (model.sound) click("ui");
+    } else {
+      setSetupOpen(!model.setupOpen);
+    }
+    // registered after the action: opening SETUP releases every press
+    const key = `ui:${target.action}`;
+    model.pressed.add(key);
+    activePointers.set(event.pointerId, { key, kind: "ui" });
+    render();
+    return;
+  }
+  if (target.type === "plate") {
+    plateSwipe = { x: event.clientX, pointerId: event.pointerId };
+    return;
+  }
+  if (model.setupOpen || !isOnline()) return;
+  try { canvas.setPointerCapture(event.pointerId); } catch (_) { /* pointer already gone */ }
+
+  if (target.type === "slide") {
+    activePointers.set(event.pointerId, { key: `slide:${target.id}`, kind: "slide", target });
+    model.drag = { id: target.id, x: target.x0, position: -1 };
+    moveSlide(activePointers.get(event.pointerId), event);
+    return;
+  }
+
+  if (target.type === "switch") {
+    const position = target.pos();
+    activePointers.set(event.pointerId, { key: target.key, kind: "switch" });
+    model.pressed.add(target.key);
+    click(target.toggle ? "toggle" : "detent");
+    if (position !== model.switches[target.id]) setPending(target.id, position);
+    else clearPending(target.id);
+    send({ id: target.id, event: "set", position });
+    render();
+    return;
+  }
+
+  const { ctl, kind } = target;
+  const alreadyPressed = keyInUse(ctl);
+  activePointers.set(event.pointerId, { key: ctl, ctl, kind });
+  model.pressed.add(ctl);
+  if (!alreadyPressed) {
+    click(target.toggle ? "toggle" : kind);
+    if (target.onPress) target.onPress();
+    send({ id: ctl, event: "down" });
+    if (ctl === "cab_deck_btn_007") hornOn();
+    if (ctl === "cab_deck_btn_023") {
+      model.activateFlash = true;
+      setTimeout(() => { model.activateFlash = false; render(); }, ACTIVATE_FLASH_MS);
+    }
+  }
+  render();
+});
+
+function moveSlide(entry, event) {
+  // finger position along the slot, clamped to the end stops, snapped to the nearest detent
+  const { x0, x1, count } = entry.target;
+  const p = pointOnPlane(event, Z_WELL);
+  if (!p) return;
+  const x = Math.max(x0, Math.min(x1, p.x));
+  const position = Math.round((x - x0) / (x1 - x0) * (count - 1));
+  if (position !== model.drag.position) click("detent");   // one click per detent passed
+  model.drag = { id: entry.target.id, x, position };
+  render();
+}
+
+canvas.addEventListener("pointermove", (event) => {
+  const entry = activePointers.get(event.pointerId);
+  if (entry && entry.kind === "slide" && model.drag) moveSlide(entry, event);
+});
+
+function releaseSlide(commit) {
+  const drag = model.drag;
+  model.drag = null;
+  if (!drag || !commit || drag.position < 0) return;
+  if (drag.position !== model.switches[drag.id]) setPending(drag.id, drag.position);
+  else clearPending(drag.id);
+  send({ id: drag.id, event: "set", position: drag.position });
+}
+
+function endPointer(event) {
+  if (event.type === "pointerup") enterImmersive();
+  if (plateSwipe && plateSwipe.pointerId === event.pointerId) {
+    const dx = event.clientX - plateSwipe.x;
+    plateSwipe = null;
+    // swipe left along the plate opens SETUP, swipe right closes it
+    if (event.type === "pointerup" && Math.abs(dx) >= SWIPE_MIN_PX) setSetupOpen(dx < 0);
+    return;
+  }
+  const entry = activePointers.get(event.pointerId);
+  if (!entry) return;
+  activePointers.delete(event.pointerId);
+  if (entry.kind === "slide") {
+    // only a finished gesture sets the switch; a cancelled one leaves it where it was
+    releaseSlide(event.type === "pointerup");
+    render();
+    return;
+  }
+  if (keyInUse(entry.key)) return;
+  model.pressed.delete(entry.key);
+  if (entry.ctl) {
+    send({ id: entry.ctl, event: "up" });
+    if (entry.ctl === "cab_deck_btn_007") hornOff();
+  }
+  render();
+}
+
+for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) canvas.addEventListener(type, endPointer);
+
+function releaseAllLocal(notifyServer) {
+  model.drag = null;
+  const entries = [...activePointers.values()];
+  activePointers.clear();
+  model.pressed.clear();
+  const sent = new Set();
+  for (const entry of entries) {
+    if (entry.ctl && notifyServer && !sent.has(entry.ctl)) {
+      send({ id: entry.ctl, event: "up" });
+      sent.add(entry.ctl);
+    }
+  }
+  hornOff();
+  render();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") releaseAllLocal(true);
+  else invalidate();
+});
+window.addEventListener("pagehide", () => releaseAllLocal(true));
+document.addEventListener("contextmenu", (event) => event.preventDefault());
+document.addEventListener("gesturestart", (event) => event.preventDefault());
+
+// ===========================================================================
+// Fullscreen and wake lock
+// ===========================================================================
+
+const fsSupported = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+let skipAutoFullscreen = false;
+
+function isFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+
+// The first tap makes the panel fullscreen. Done on pointerup, which still counts as a user
+// gesture, so it never interferes with the press itself.
+function enterImmersive() {
+  requestWakeLock();
+  if (!fsSupported || isFullscreen() || skipAutoFullscreen) return;
+  const root = document.documentElement;
+  const request = root.requestFullscreen || root.webkitRequestFullscreen;
+  try {
+    const result = request.call(root, { navigationUI: "hide" });
+    if (result && result.catch) result.catch(() => { /* refused; SETUP has a button */ });
+  } catch (_) { /* refused; SETUP has a button */ }
+}
+
+function toggleFullscreen() {
+  // leaving fullscreen with the button means the user wants the browser back: stop auto re-entering
+  skipAutoFullscreen = isFullscreen();
+  const d = document;
+  if (isFullscreen()) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+  else (d.documentElement.requestFullscreen || d.documentElement.webkitRequestFullscreen).call(d.documentElement);
+}
+
+let wakeLock = null;
+async function requestWakeLock() {
+  // only in a secure context (HTTPS or the Chrome flag described in README)
+  if (wakeLock || !("wakeLock" in navigator) || !window.isSecureContext) return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => { wakeLock = null; });
+  } catch (_) { wakeLock = null; }
+}
+
+// ===========================================================================
+// Error reporting
+// ===========================================================================
+
+function reportError(text) {
+  const message = String(text).slice(0, 1000);
+  if (isOnline() && !DEMO) send({ type: "client_error", message });
+  else if (queuedErrors.length < MAX_QUEUED_ERRORS) queuedErrors.push(message);
+}
+
+function flushErrors() {
+  while (queuedErrors.length > 0) send({ type: "client_error", message: queuedErrors.shift() });
+}
+
+window.addEventListener("error", (event) => {
+  reportError(`v3: ${event.message} at ${event.filename}:${event.lineno}:${event.colno} | ${navigator.userAgent}`);
+});
+window.addEventListener("unhandledrejection", (event) => {
+  reportError(`v3: unhandled rejection: ${event.reason} | ${navigator.userAgent}`);
+});
+
+// ===========================================================================
+// Demo (?demo): a local stand-in for the server so the look can be checked without the game.
+// It never opens a socket, so nothing can be pressed on the PC.
+// ===========================================================================
+
+const demo = {
+  st: { lights: 1, wipers: 0, high: false, left: false, right: false, hazards: false, engine: "on", park: false, trailer: true,
+    beacon: false, auxF: 0, auxR: 0, air: 104, fuel: 410, clock: 2 * 1440 + 14 * 60 + 5, phase: false },
+  start() {
+    model.online = true;
+    buildSetup([
+      { key: "lights:forward", number: 1, label: "LIGHTS", part: "forward", action: "Light modes" },
+      { key: "cab_deck_btn_002", number: 2, label: "HIGH BEAM", action: "High beam" },
+      { key: "cab_deck_btn_003", number: 3, label: "LEFT", action: "Left blinker" },
+    ]);
+    setInterval(() => {
+      const st = this.st;
+      st.phase = !st.phase;
+      st.air = Math.max(40, Math.min(125, st.air + (st.engine === "on" ? 1.6 : -.4)));
+      st.clock += 1;
+      this.push();
+    }, 500);
+    this.push();
+  },
+  receive(message) {
+    const st = this.st;
+    if (message.event === "set") {
+      setTimeout(() => { st[message.id] = message.position; this.push(); }, 250);
+      return;
+    }
+    if (message.event !== "down") return;
+    const flips = {
+      cab_deck_btn_002: () => { st.high = !st.high; },
+      cab_deck_btn_003: () => { st.left = !st.left; st.right = false; },
+      cab_deck_btn_004: () => { st.right = !st.right; st.left = false; },
+      cab_deck_btn_005: () => { st.hazards = !st.hazards; },
+      cab_deck_btn_008: () => { st.engine = { off: "dim", dim: "on", on: "off" }[st.engine]; },
+      cab_deck_btn_009: () => { st.park = !st.park; },
+      cab_deck_btn_010: () => { st.trailer = !st.trailer; },
+      cab_deck_btn_020: () => { st.beacon = !st.beacon; },
+      cab_deck_btn_021: () => { st.auxF = (st.auxF + 1) % 3; },
+      cab_deck_btn_022: () => { st.auxR = (st.auxR + 1) % 3; },
+    };
+    if (flips[message.id]) { flips[message.id](); this.push(); }
+  },
+  push() {
+    const st = this.st, on = (v) => ({ level: v ? "on" : "off" });
+    const blink = (v) => ({ level: v ? (st.phase ? "on" : "dim") : "off" });
+    const aux = (v) => ({ level: ["off", "dim", "on"][v] });
+    applyState({
+      type: "state",
+      game: { telemetry: true, active: true, paused: false },
+      switches: { lights: st.lights, wipers: st.wipers },
+      indicators: {
+        engine: { level: st.engine }, lights: { level: ["off", "dim", "on"][st.lights] }, high_beam: on(st.high),
+        blinker_left: blink(st.left), blinker_right: blink(st.right), hazards: blink(st.hazards),
+        park_brake: on(st.park), wipers: on(st.wipers > 0), trailer: on(st.trailer), beacon: on(st.beacon),
+        aux_front: aux(st.auxF), aux_roof: aux(st.auxR),
+        air_pressure: { level: "off", value: st.air, state: st.air < 60 ? "warning" : "ok" },
+        fuel: { value: st.fuel, capacity: 568, range_km: 1330, avg_l_per_km: .31, state: "ok" },
+        nav: {
+          distance_m: 412000, time_s: 5 * 3600 + 1200, rest_min: 312, rest_range_km: 410, clock_min: st.clock,
+          deadline_min: 1260, planned_km: 1180, destination: "Sacramento",
+          plan: { day: 2, days: 3, done_km: 210, target_km: 420, ahead_km: 24, past_km: [380], next_km: [390], required_kmh: 61, late: false },
+        },
+      },
+    });
+    render();
+  },
+};
+
+// ===========================================================================
+// Start
+// ===========================================================================
+
+// The console swings up into view once, as if the screen were lifted into place.
+function powerOn() {
+  const endZ = camera.position.z;
+  camera.position.set(0, -H * .5, endZ * 1.15);
+  camera.lookAt(0, 0, 0);
+  tween(camera.position, { y: 0, z: endZ, duration: 1.8, delay: .2, ease: "power3.inOut", onUpdate: () => camera.lookAt(0, 0, 0) });
+}
+
+async function start() {
+  Object.assign(window.cabDeck3d, { model, camera, gsap, renderer, composer });   // for debugging from the console
+  // dial numbers and cap legends are painted with the panel font, so wait for it
+  try { await document.fonts.load(`700 20px ${CSS_FONT}`); } catch (_) { /* fall back to Arial */ }
+  resize();
+  powerOn();
+  if (DEMO) demo.start(); else connect();
+  // let troika lay out the text before the boot curtain lifts
+  setTimeout(() => document.getElementById("boot").classList.add("gone"), 600);
+}
+
+start().catch((err) => {
+  reportError(`v3 start failed: ${err && err.stack || err}`);
+  document.getElementById("boot").innerHTML = `THE 3D PANEL FAILED TO START<a href="/">OPEN THE CLASSIC PANEL</a>`;
+});
+</script>
+</body>
+</html>
