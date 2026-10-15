@@ -9,6 +9,7 @@ Run on macOS:    python server.py --dry-run
 import argparse
 import asyncio
 import json
+import math
 import logging
 import re
 import socket
@@ -24,7 +25,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Callable
 
 import uvicorn
-from fastapi import FastAPI, Query, Request, WebSocket
+from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -51,6 +52,12 @@ TELEMETRY_POLL_S = 0.1
 # The instrument cluster reads the game on its own, much faster loop so needles keep up.
 DASH_POLL_S = 1 / 60
 TELEMETRY_RETRY_S = 5.0
+# Performance watch: what to log when the server falls behind (see Perf).
+WATCH_INTERVAL_S = 0.1        # the watchdog wakes this often and measures how late it is
+STALL_WARN_S = 0.25           # a later wake-up means the whole server was blocked
+SLOW_READ_WARN_S = 0.05       # one telemetry read taking longer than this is worth a line
+SLOW_SEND_WARN_S = 0.5        # a client taking this long to accept a message has a weak link
+PERF_REPORT_S = 60.0          # summarise each minute that had trouble
 # Telemetry needs a moment to reflect a press; skip corrections right after one.
 SWITCH_SETTLE_S = 1.0
 
@@ -63,6 +70,14 @@ PACE_MAX_STEP_MINUTES = 30    # a bigger clock jump means sleep, ferry or train:
 PACE_MAX_STEP_KM = 5.0        # a bigger odometer jump means a teleport: start over
 PACE_MOVING_KM = 0.01         # odometer change that counts as moving within one game minute
 PACE_MAX_SAMPLES = 5000
+
+# Road grade: rise over horizontal travel of the truck's world position (SCS: Y is up, X/Z flat).
+GRADE_WINDOW_M = 60.0         # grade over the last 60 m of road, long enough to smooth bumps
+GRADE_MIN_M = 25.0            # need this much travel before showing a grade
+GRADE_SAMPLE_M = 0.5          # store a point every half metre of travel
+GRADE_MAX_STEP_M = 50.0       # a bigger jump between polls is a teleport or ferry: start over
+GRADE_MAX_PCT = 30.0          # anything steeper is a glitch, not a road
+GRADE_SAMPLES = 400
 
 # Delivery plan: the route is split into shifts (wake up to sleep) that fit before the deadline.
 SHIFT_DEFAULT_MIN = 11 * 60   # driving window between sleeps until the game shows a real one
@@ -152,6 +167,15 @@ class DrivePace:
 
 
 @dataclass
+class GradeTrack:
+    """Recent (horizontal metres travelled, height) points of the truck, for the road grade."""
+
+    samples: deque = field(default_factory=lambda: deque(maxlen=GRADE_SAMPLES))
+    last: tuple[float, float, float] | None = None
+    travelled: float = 0.0
+
+
+@dataclass
 class JobPlan:
     """Shift-by-shift plan of the current job. Lives in memory, like DrivePace."""
 
@@ -171,6 +195,37 @@ class JobPlan:
 
 
 @dataclass
+class Outbox:
+    """The newest message waiting for one client, sent by the client's own task.
+
+    A newer message replaces one not sent yet, so a client on a weak link only misses frames:
+    it never holds up the telemetry loops or the other clients.
+    """
+
+    websocket: WebSocket
+    name: str
+    latest: dict[str, Any] | None = None
+    ready: asyncio.Event = field(default_factory=asyncio.Event)
+    task: asyncio.Task | None = None
+    dropped: int = 0
+    slow_sends: int = 0
+    last_warn: float = 0.0
+
+
+@dataclass
+class Perf:
+    """Server timing for the current minute and the last one that had trouble."""
+
+    window_start: float = field(default_factory=time.monotonic)
+    lag_max: float = 0.0
+    stalls: int = 0
+    reads: int = 0
+    read_total: float = 0.0
+    read_max: float = 0.0
+    last_trouble: dict[str, Any] | None = None
+
+
+@dataclass
 class DeckState:
     config: dict[str, Any]
     set_button: SetButton
@@ -183,14 +238,16 @@ class DeckState:
     pressed: set[int] = field(default_factory=set)
     release_tasks: dict[int, asyncio.Task] = field(default_factory=dict)
     switches: dict[str, SwitchState] = field(default_factory=dict)
-    sockets: set[WebSocket] = field(default_factory=set)
-    dash_sockets: set[WebSocket] = field(default_factory=set)
+    sockets: dict[WebSocket, Outbox] = field(default_factory=dict)
+    dash_sockets: dict[WebSocket, Outbox] = field(default_factory=dict)
+    perf: Perf = field(default_factory=Perf)
     dash: dict[str, Any] = field(default_factory=lambda: {"type": "dash", "live": False})
     trip: dict[str, Any] = field(default_factory=dict)
     game: dict[str, Any] = field(default_factory=lambda: {"telemetry": False})
     indicators: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_state_message: dict[str, Any] | None = None
     pace: DrivePace = field(default_factory=DrivePace)
+    grade: GradeTrack = field(default_factory=GradeTrack)
     plan: JobPlan = field(default_factory=JobPlan)
 
     @property
@@ -634,7 +691,7 @@ def update_trip(trip: dict[str, Any], data: dict[str, Any]) -> float:
     return max(0.0, odometer - trip["start"]) * KM_TO_MI
 
 
-def compute_dash(data: dict[str, Any], trip_mi: float = 0.0) -> dict[str, Any]:
+def compute_dash(data: dict[str, Any], trip_mi: float = 0.0, grade_pct: float | None = None) -> dict[str, Any]:
     """Instrument cluster values in the units ATS shows: mph, psi, °F, miles."""
     capacity = float(data.get("fuelCapacity") or 0.0)
     l_per_km = float(data.get("fuelAvgConsumption") or 0.0)
@@ -663,6 +720,7 @@ def compute_dash(data: dict[str, Any], trip_mi: float = 0.0) -> dict[str, Any]:
         "trip_mi": round(trip_mi, 1),
         "range_mi": round(float(data.get("fuelRange") or 0.0) * KM_TO_MI),
         "avg_mpg": round(KM_TO_MI / (l_per_km * L_TO_GAL), 1) if l_per_km > 0 else 0.0,
+        "grade_pct": grade_pct,   # + uphill, - downhill, None while still measuring
     }
 
 
@@ -719,6 +777,52 @@ def pace_estimate(pace: DrivePace) -> dict[str, Any]:
     if distance < PACE_MIN_KM or minutes < PACE_MIN_MINUTES:
         return {"avg_kmh": None, "window_km": round(distance, 1)}
     return {"avg_kmh": round(distance / minutes * 60, 1), "window_km": round(distance, 1)}
+
+
+def reset_grade(track: GradeTrack, point: tuple[float, float, float] | None) -> None:
+    track.samples.clear()
+    track.last = point
+    track.travelled = 0.0
+    if point is not None:
+        track.samples.append((0.0, point[1]))
+
+
+def record_grade(track: GradeTrack, data: dict[str, Any]) -> None:
+    """Add the truck's position to the grade window. Call on every poll."""
+    if data.get("paused"):
+        return
+    if float(data.get("speed") or 0.0) < 0:
+        # reversing: the grade would read backwards, so start again once driving forward
+        reset_grade(track, None)
+        return
+    point = (float(data.get("coordinateX") or 0.0), float(data.get("coordinateY") or 0.0), float(data.get("coordinateZ") or 0.0))
+    if track.last is None:
+        reset_grade(track, point)
+        return
+    step = math.hypot(point[0] - track.last[0], point[2] - track.last[2])
+    if step > GRADE_MAX_STEP_M:
+        reset_grade(track, point)
+        return
+    if step < GRADE_SAMPLE_M:
+        return
+    track.travelled += step
+    track.last = point
+    track.samples.append((track.travelled, point[1]))
+    while len(track.samples) > 2 and track.travelled - track.samples[1][0] >= GRADE_WINDOW_M:
+        track.samples.popleft()
+
+
+def grade_estimate(track: GradeTrack) -> float | None:
+    """Road grade in percent (+ uphill, - downhill), or None until enough road is measured."""
+    if len(track.samples) < 2:
+        return None
+    first_m, first_y = track.samples[0]
+    last_m, last_y = track.samples[-1]
+    span = last_m - first_m
+    if span < GRADE_MIN_M:
+        return None
+    pct = (last_y - first_y) / span * 100
+    return round(pct, 1) if abs(pct) <= GRADE_MAX_PCT else None
 
 
 def plan_shifts(rest_min: int, minutes_left: int, shift_min: int, sleep_min: int) -> list[int]:
@@ -812,6 +916,7 @@ def update_from_telemetry(state: DeckState, data: dict[str, Any] | None) -> None
     if active:
         record_pace(state.pace, data)
         add_rest_range(state.indicators["nav"], pace_estimate(state.pace))
+        record_grade(state.grade, data)   # shown on the dash, see compute_dash
         state.indicators["nav"]["plan"] = update_plan(state.plan, data)
     correct_switches(state)
 
@@ -853,9 +958,23 @@ def correct_switches(state: DeckState) -> None:
             switch.position = switch.target = 1
 
 
+def read_timed(state: DeckState) -> dict[str, Any] | None:
+    """Read the game and note how long it took; the read blocks the whole server while it runs."""
+    started = time.monotonic()
+    data = state.read_telemetry()
+    took = time.monotonic() - started
+    perf = state.perf
+    perf.reads += 1
+    perf.read_total += took
+    perf.read_max = max(perf.read_max, took)
+    if took > SLOW_READ_WARN_S:
+        log.warning("Slow telemetry read: %.0f ms.", took * 1000)
+    return data
+
+
 async def telemetry_loop(state: DeckState) -> None:
     while True:
-        update_from_telemetry(state, state.read_telemetry())
+        update_from_telemetry(state, read_timed(state))
         await publish_state(state)
         await asyncio.sleep(TELEMETRY_POLL_S)
 
@@ -866,9 +985,10 @@ async def dash_loop(state: DeckState) -> None:
     deadline = loop.time()
     while True:
         if state.dash_sockets:
-            data = state.read_telemetry()
+            data = read_timed(state)
             active = data is not None and bool(data.get("sdkActive"))
-            state.dash = compute_dash(data, update_trip(state.trip, data)) if active else {"type": "dash", "live": False}
+            state.dash = (compute_dash(data, update_trip(state.trip, data), grade_estimate(state.grade)) if active
+                          else {"type": "dash", "live": False})
             await publish_dash(state)
         # Sleep to the next tick rather than a fixed pause, so the work does not slow the rate.
         deadline = max(deadline + DASH_POLL_S, loop.time())
@@ -876,7 +996,91 @@ async def dash_loop(state: DeckState) -> None:
 
 
 async def publish_dash(state: DeckState) -> None:
-    await asyncio.gather(*(ws.send_json(state.dash) for ws in list(state.dash_sockets)), return_exceptions=True)
+    for box in list(state.dash_sockets.values()):
+        post(box, state.dash)
+
+
+def post(box: Outbox, message: dict[str, Any]) -> None:
+    if box.latest is not None:
+        box.dropped += 1
+    box.latest = message
+    box.ready.set()
+
+
+async def run_outbox(box: Outbox) -> None:
+    """Send each client the newest message as fast as its link accepts it."""
+    while True:
+        await box.ready.wait()
+        box.ready.clear()
+        message, box.latest = box.latest, None
+        if message is None:
+            continue
+        started = time.monotonic()
+        try:
+            await box.websocket.send_json(message)
+        except (WebSocketDisconnect, RuntimeError, OSError):
+            return   # the connection is gone; its handler cleans up
+        took = time.monotonic() - started
+        if took > SLOW_SEND_WARN_S:
+            box.slow_sends += 1
+            now = time.monotonic()
+            if now - box.last_warn > PERF_REPORT_S:
+                box.last_warn = now
+                log.warning("Slow link to %s: one message took %.1f s (weak Wi-Fi or a sleeping device). "
+                            "Frames dropped so far: %d.", box.name, took, box.dropped)
+
+
+def open_outbox(clients: dict[WebSocket, Outbox], websocket: WebSocket, name: str) -> Outbox:
+    box = Outbox(websocket, name)
+    box.task = asyncio.create_task(run_outbox(box))
+    clients[websocket] = box
+    return box
+
+
+def close_outbox(clients: dict[WebSocket, Outbox], websocket: WebSocket) -> Outbox | None:
+    box = clients.pop(websocket, None)
+    if box and box.task:
+        box.task.cancel()
+    return box
+
+
+def outbox_stats(clients: dict[WebSocket, Outbox]) -> list[dict[str, Any]]:
+    return [{"client": b.name, "dropped": b.dropped, "slow_sends": b.slow_sends} for b in clients.values()]
+
+
+async def watch_performance(state: DeckState) -> None:
+    """Measure how late the server wakes up; being late means something blocked it."""
+    loop = asyncio.get_running_loop()
+    while True:
+        started = loop.time()
+        await asyncio.sleep(WATCH_INTERVAL_S)
+        lag = loop.time() - started - WATCH_INTERVAL_S
+        perf = state.perf
+        perf.lag_max = max(perf.lag_max, lag)
+        if lag > STALL_WARN_S:
+            perf.stalls += 1
+            log.warning("Server stalled for %.0f ms: the event loop was blocked (busy PC or a slow call).", lag * 1000)
+        if time.monotonic() - perf.window_start >= PERF_REPORT_S:
+            report_minute(state)
+
+
+def report_minute(state: DeckState) -> None:
+    """Log the minute just ended if it had trouble, then start a new one."""
+    perf = state.perf
+    summary = {
+        "at": time.strftime("%H:%M:%S"),
+        "stalls": perf.stalls,
+        "worst_lag_ms": round(perf.lag_max * 1000),
+        "reads": perf.reads,
+        "avg_read_ms": round(perf.read_total / perf.reads * 1000, 2) if perf.reads else None,
+        "worst_read_ms": round(perf.read_max * 1000, 1),
+        "panels": outbox_stats(state.sockets),
+        "dashes": outbox_stats(state.dash_sockets),
+    }
+    if perf.stalls or perf.read_max > SLOW_READ_WARN_S:
+        perf.last_trouble = summary
+        log.warning("Performance last minute: %s", summary)
+    state.perf = Perf(last_trouble=perf.last_trouble)
 
 
 # --- Button state ------------------------------------------------------------
@@ -990,7 +1194,8 @@ async def publish_state(state: DeckState) -> None:
     if message == state.last_state_message:
         return
     state.last_state_message = message
-    await asyncio.gather(*(ws.send_json(message) for ws in list(state.sockets)), return_exceptions=True)
+    for box in list(state.sockets.values()):
+        post(box, message)   # a full snapshot, so a newer one may replace an unsent one
 
 
 def bind_press(state: DeckState, key: Any, text: str) -> None:
@@ -1071,7 +1276,8 @@ def handle_message(state: DeckState, text: str, held: set[int]) -> dict[str, Any
 def create_app(state: DeckState, dash_pages: dict[int, Path]) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        tasks = [asyncio.create_task(telemetry_loop(state)), asyncio.create_task(dash_loop(state))]
+        tasks = [asyncio.create_task(telemetry_loop(state)), asyncio.create_task(dash_loop(state)),
+                 asyncio.create_task(watch_performance(state))]
         yield
         for task in tasks:
             task.cancel()
@@ -1110,15 +1316,16 @@ def create_app(state: DeckState, dash_pages: dict[int, Path]) -> FastAPI:
         # Read-only stream: the cluster never sends commands, so nothing can be pressed from here.
         await websocket.accept()
         client = f"{websocket.client.host}:{websocket.client.port}" if websocket.client else "unknown"
-        state.dash_sockets.add(websocket)
+        box = open_outbox(state.dash_sockets, websocket, f"dash {client}")
         log.info("Dash connected: %s (dash clients: %d)", client, len(state.dash_sockets))
         try:
-            await websocket.send_json(state.dash)
+            post(box, state.dash)
             while (await websocket.receive())["type"] != "websocket.disconnect":
                 pass
         finally:
-            state.dash_sockets.discard(websocket)
-            log.info("Dash disconnected: %s (dash clients: %d)", client, len(state.dash_sockets))
+            close_outbox(state.dash_sockets, websocket)
+            log.info("Dash disconnected: %s (dash clients: %d, frames it missed: %d, slow sends: %d)",
+                     client, len(state.dash_sockets), box.dropped, box.slow_sends)
 
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
@@ -1137,6 +1344,14 @@ def create_app(state: DeckState, dash_pages: dict[int, Path]) -> FastAPI:
             "commit": state.commit,
             "uptime_s": round(time.monotonic() - state.started_at),
             "last_error": state.errors.last,
+            "perf": {
+                "worst_lag_ms_this_minute": round(state.perf.lag_max * 1000),
+                "stalls_this_minute": state.perf.stalls,
+                "worst_read_ms_this_minute": round(state.perf.read_max * 1000, 1),
+                "panels": outbox_stats(state.sockets),
+                "dashes": outbox_stats(state.dash_sockets),
+                "last_trouble": state.perf.last_trouble,
+            },
         }
 
     @app.get("/api/logs")
@@ -1148,11 +1363,12 @@ def create_app(state: DeckState, dash_pages: dict[int, Path]) -> FastAPI:
         await websocket.accept()
         client = f"{websocket.client.host}:{websocket.client.port}" if websocket.client else "unknown"
         held: set[int] = set()
-        state.sockets.add(websocket)
-        log.info("Panel connected: %s (clients: %d)", client, len(state.sockets))
+        log.info("Panel connected: %s (clients: %d)", client, len(state.sockets) + 1)
         try:
             await websocket.send_json(layout_message(state.config))
             await websocket.send_json(state_message(state))
+            box = open_outbox(state.sockets, websocket, f"panel {client}")
+            post(box, state_message(state))   # in case the state changed while the first messages went out
             while True:
                 incoming = await websocket.receive()
                 if incoming["type"] == "websocket.disconnect":
@@ -1165,13 +1381,13 @@ def create_app(state: DeckState, dash_pages: dict[int, Path]) -> FastAPI:
                 if reply is not None:
                     await websocket.send_json(reply)
         finally:
-            state.sockets.discard(websocket)
+            box = close_outbox(state.sockets, websocket)
             still_pressed = sorted(number for number in held if number in state.pressed)
             for number in still_pressed:
                 release(state, number)
             log.info(
-                "Panel disconnected: %s, released %s (clients: %d)",
-                client, still_pressed or "nothing", len(state.sockets),
+                "Panel disconnected: %s, released %s (clients: %d, slow sends: %d)",
+                client, still_pressed or "nothing", len(state.sockets), box.slow_sends if box else 0,
             )
 
     return app
