@@ -49,6 +49,28 @@
   /* D / N / R: the current one sits in a lit box */
   .dnr { display: flex; gap: calc(var(--u) * .4); padding: calc(var(--u) * .3); border-radius: calc(var(--u) * .8); box-shadow: inset 0 0 0 1px rgba(228,220,196,.12); }
   .dnr span { width: calc(var(--u) * 3.8); text-align: center; padding: calc(var(--u) * .35) 0; border-radius: calc(var(--u) * .5); font-size: max(10px, calc(var(--u) * 2.1)); font-weight: 700; color: rgba(228,220,196,.3); }
+  /* manual box: the shift knob's pattern under the gear plate, in place of D / N / R */
+  .hpat { display: none; align-items: center; gap: calc(var(--u) * 1.4); }
+  .manual .hpat { display: flex; }
+  .manual .dnr { display: none; }
+  .hp-grid { position: relative; display: grid; grid-template-columns: repeat(3, calc(var(--u) * 7)); grid-template-rows: repeat(2, calc(var(--u) * 3.7));
+    column-gap: calc(var(--u) * 1.8); row-gap: calc(var(--u) * 1.2); }
+  /* the speed gives the pattern some room: a little smaller and lower */
+  .manual .speed { font-size: calc(var(--u) * 36); transform: translate(-50%, -42%) skewX(-6deg); }
+  .hp-grid svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .hp-grid line { stroke: rgba(228,220,196,.22); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .hp-cell { position: relative; display: flex; align-items: center; justify-content: center; gap: .3em; border-radius: calc(var(--u) * .6);
+    background: #0a1a1c; box-shadow: inset 0 0 0 1px rgba(228,220,196,.14); font-size: max(11px, calc(var(--u) * 2.5)); font-weight: 700; color: rgba(228,220,196,.3); }
+  .hp-cell b { font-weight: 700; }
+  .hp-cell.on { color: rgba(228,220,196,.25); box-shadow: inset 0 0 0 1px var(--mint), 0 0 calc(var(--u) * 1.4) -0.15em var(--mint); }
+  .hp-cell b.act { color: var(--cream); text-shadow: 0 0 calc(var(--u) * .7) rgba(119,228,237,.8); }
+  .hp-sel { display: flex; flex-direction: column; gap: calc(var(--u) * .5); align-items: center; }
+  .hp-sel i { font-style: normal; font-size: max(7px, calc(var(--u) * 1.1)); letter-spacing: .25em; color: var(--dim); font-weight: 700; }
+  .hp-sel span { min-width: calc(var(--u) * 3.6); text-align: center; padding: calc(var(--u) * .3) calc(var(--u) * .4); border-radius: calc(var(--u) * .5);
+    font-size: max(10px, calc(var(--u) * 2)); font-weight: 700; color: rgba(228,220,196,.3); box-shadow: inset 0 0 0 1px rgba(228,220,196,.1); }
+  .hp-sel span.on { color: #0a1a1c; background: var(--mint); box-shadow: 0 0 calc(var(--u) * 1.2) -0.1em var(--mint); }
+  .hp-sel.split span.on { background: var(--amber); box-shadow: 0 0 calc(var(--u) * 1.2) -0.1em var(--amber); }
+  .gear small { font-size: .45em; margin-left: .08em; color: var(--amber); vertical-align: .9em; }
   .dnr span.on { color: var(--cream); box-shadow: inset 0 0 0 1px var(--mint), 0 0 calc(var(--u) * 1.2) -0.2em var(--mint); text-shadow: 0 0 calc(var(--u) * .6) rgba(119,228,237,.6); }
   /* cruise line: icon, name and the set speed; dim while cruise is off */
   .cruise { display: flex; align-items: center; gap: .55em; font-size: max(12px, calc(var(--u) * 2.9)); font-weight: 700; letter-spacing: .14em; color: var(--mint); opacity: .3; transition: opacity .2s; }
@@ -128,6 +150,9 @@ uniform vec4 uFieldBox;         // local x0, y0, width, height covered by the fi
 uniform float uLT;              // total arc length of the outline
 uniform vec3 uEnds;             // inner start x, inner end x, inner end y (local)
 uniform float uOverlay;         // 1 when drawn over the game: no console background
+uniform vec2 uPeb[64];          // pebble form: right half of the silhouette, top centre round to bottom centre
+uniform int uPebN;              // its point count; 0 = the usual silhouette
+uniform float uGearY;           // centre of the gear plate: its top lies level with the scale ends
 
 layout(location = 0) out vec4 outColor;   // colour, alpha = glow amount for the bloom
 layout(location = 1) out vec4 outCover;   // how opaque the pixel is, for the transparent overlay
@@ -323,8 +348,8 @@ vec3 plate(vec3 col, float d, float shade) {
 vec3 panels(vec3 col, vec2 p) {
   // top plate with DEMO / lamps, and the bottom plate with trip, odometer and average fuel
   // gear plate: its top edge sits on the line joining the two gauges' upper ends
-  float top = sdTrapezoid(p - vec2(0., .32), .2, .29, .046) - .008;
-  col = plate(col, top, smoothstep(.27, .37, p.y));
+  float top = sdTrapezoid(p - vec2(0., uGearY), .2, .29, .046) - .008;
+  col = plate(col, top, smoothstep(uGearY - .05, uGearY + .05, p.y));
   // base at y -.48, level with the bottom scale line of both gauges (outline -.492 + BAND)
   float bottom = sdTrapezoid(p - vec2(0., -.396), .4, .3, .074) - .01;
   col = plate(col, bottom, smoothstep(-.31, -.47, p.y) * .6);
@@ -337,6 +362,35 @@ vec3 panels(vec3 col, vec2 p) {
   float fade = 1. - smoothstep(.15, .33, abs(p.x));
   paint(col, SATIN * .6, hline(p, -.172, -.33, .33) * fade, .15 * fade);
   return col;
+}
+
+// Silhouette: both gauges (outline plus a margin) and the band between them, whose top is the
+// straight line joining the two gauges' upper ends.
+float silhouette(vec2 p) {
+  float shape = 0.;
+  for (int k = 0; k < 2; k++) {
+    float side = k == 0 ? -1. : 1.;
+    vec3 o = field(vec2((p.x - side * GX) * side, p.y));
+    shape = max(shape, smoothstep(-SHAPE_MARGIN - PX, -SHAPE_MARGIN + PX, o.y));
+  }
+  float topY = uEnds.z + SHAPE_MARGIN;
+  return max(shape, (1. - smoothstep(topY - PX, topY + PX, p.y)) * (1. - smoothstep(.5 - PX, .5 + PX, abs(p.x))));
+}
+
+// Pebble silhouette, mirrored from its right half. The half closes along the centre line, which a
+// ray going right from |x| never crosses, so only the outline itself counts.
+float pebble(vec2 p) {
+  vec2 q = vec2(abs(p.x), p.y);
+  float d = 1e9;
+  bool inside = false;
+  for (int i = 0; i < 63; i++) {
+    if (i >= uPebN - 1) break;
+    vec2 a = uPeb[i], e = uPeb[i + 1] - a, w = q - a;
+    vec2 h = w - e * clamp(dot(w, e) / dot(e, e), 0., 1.);
+    d = min(d, dot(h, h));
+    if ((a.y > q.y) != (uPeb[i + 1].y > q.y) && q.x < a.x + (q.y - a.y) * e.x / e.y) inside = !inside;
+  }
+  return smoothstep(-PX, PX, inside ? sqrt(d) : -sqrt(d));
 }
 
 void main() {
@@ -368,17 +422,7 @@ void main() {
   col = mini(col, p, .56, .865, -.177, uMini2.y, vec2(-1., .8));
 
   outColor = vec4(col, EM);
-  // silhouette: both gauges (outline plus a margin) and the band between them, whose top is the
-  // straight line joining the two gauges' upper ends
-  float shape = 0.;
-  for (int k = 0; k < 2; k++) {
-    float side = k == 0 ? -1. : 1.;
-    vec3 o = field(vec2((p.x - side * GX) * side, p.y));
-    shape = max(shape, smoothstep(-SHAPE_MARGIN - PX, -SHAPE_MARGIN + PX, o.y));
-  }
-  float topY = uEnds.z + SHAPE_MARGIN;
-  shape = max(shape, (1. - smoothstep(topY - PX, topY + PX, p.y)) * (1. - smoothstep(.5 - PX, .5 + PX, abs(p.x))));
-  outCover = vec4(COV, shape, 0., 1.);
+  outCover = vec4(COV, uPebN > 0 ? pebble(p) : silhouette(p), 0., 1.);
 }
 </script>
 
@@ -481,6 +525,9 @@ const OVERLAY = PARAMS.has("overlay");   // see-through HUD over the game
 const SHAPED = PARAMS.has("shape");      // dark dash cut to its own silhouette, transparent around it
 if (OVERLAY || SHAPED) document.documentElement.classList.add("overlay");
 if (SHAPED) document.documentElement.classList.add("shaped");
+// "?shape=2": the pebble form, one smooth curve widest at the bottom (sides rising and rounding
+// over into a nearly flat top). "?shape=1" keeps the DAF form.
+const PEBBLE = PARAMS.get("shape") === "2";
 const MAX_DPR = 2;            // cap render resolution to keep the shader cheap
 const BLOOM_LEVELS = 6;       // each level halves the size: wider, softer glow
 const BLOOM_STRENGTH = .45;
@@ -491,7 +538,7 @@ const BLOOM_UP_WEIGHT = .7;   // how much each wider level adds back
 const GX = .575;
 const CORNER_R = .24;      // soft corner radius (short edges cap it, see roundCorners)
 const CORNER_STEPS = 9;    // points per rounded corner
-const SHAPE = [
+const DAF_SHAPE = [
   [-.10, -.492],   // inner end of the bottom: scale zero (leaves room for the bottom plate)
   [ .20, -.492],   // bottom edge: its scale line sits level with the base of the bottom plate
   [ .45, -.30],    // lower chamfer
@@ -500,6 +547,34 @@ const SHAPE = [
   [ .12,  .45],    // top edge
   [-.20,  .37],    // top runs further in than the bottom and dips: scale end
 ];
+// Pebble: half a superellipse standing on a flat bottom. x = a cos(t)^(2/NX), height = sin(t)^(2/NY):
+// NX keeps the sides upright for longer, NY flattens the top. One curve, no straight runs or joints;
+// only where it meets the flat bottom is the corner softened.
+const PEBBLE_NX = 3.4, PEBBLE_NY = 3.4;
+function pebbleCurve(a, bottom, top, tFrom, tTo, steps) {
+  const out = [];
+  for (let k = 0; k <= steps; k++) {
+    const t = tFrom + (tTo - tFrom) * k / steps;
+    const c = Math.max(0, Math.cos(t)), sn = Math.max(0, Math.sin(t));
+    out.push([a * c ** (2 / PEBBLE_NX), bottom + (top - bottom) * sn ** (2 / PEBBLE_NY)]);
+  }
+  return out;
+}
+// Round off just the one corner at pts[i], where the curve stands on the flat bottom.
+function softenCorner(pts, i, radius, steps) {
+  return [...pts.slice(0, i - 1), ...roundCorners(pts.slice(i - 1, i + 2), radius, steps), ...pts.slice(i + 2)];
+}
+// silhouette: right half from the top centre round to the bottom centre, filling the screen
+const PEBBLE_OUTLINE = softenCorner([...pebbleCurve(1.075, -.495, .495, Math.PI / 2, 0, 40), [0, -.495]], 40, .1, 8);
+// the gauges follow the same curve a little inside it; each scale ends where it meets x = SCALE_END_X
+const PEBBLE_SCALE_END_X = .375;
+const PEBBLE_A = 1.05;
+const PEBBLE_T_END = Math.acos((PEBBLE_SCALE_END_X / PEBBLE_A) ** (PEBBLE_NX / 2));
+const PEBBLE_SHAPE = softenCorner([
+  [-.10, -.47],    // inner end of the bottom: scale zero
+  ...pebbleCurve(PEBBLE_A, -.47, .47, 0, PEBBLE_T_END, 24).map(([x, y]) => [x - GX, y]),
+], 1, .1, CORNER_STEPS);
+const SHAPE = PEBBLE ? PEBBLE_SHAPE : DAF_SHAPE;
 // Replace each inner corner with an arc tangent to both edges, so the edges stay where they are.
 function roundCorners(pts, radius, steps) {
   const out = [pts[0]];
@@ -525,10 +600,13 @@ function roundCorners(pts, radius, steps) {
   return out;
 }
 
-const OUTLINE = roundCorners(SHAPE, CORNER_R, CORNER_STEPS);
+// the pebble keeps its corners readable: smaller radius than the DAF form
+// Gear plate (top centre): its top edge (centre + .054) sits level with where the scales end.
+const OUTLINE = PEBBLE ? SHAPE : roundCorners(SHAPE, CORNER_R, CORNER_STEPS);
 const CUM = OUTLINE.map((_, i) => OUTLINE.slice(0, i).reduce((sum, pt, j) =>
   sum + Math.hypot(OUTLINE[j + 1][0] - pt[0], OUTLINE[j + 1][1] - pt[1]), 0));
 const LT = CUM[CUM.length - 1];
+const GEAR_Y = PEBBLE ? OUTLINE[OUTLINE.length - 1][1] - .066 : .32;   // pebble: plate top on the scale track
 
 // Baked outline field in local coordinates: covers the outline plus a margin.
 const FIELD_BOX = [-.62, -.53, 1.2, 1.06];   // x0, y0, width, height
@@ -671,11 +749,20 @@ function buildOverlay() {
   // centre: gear with blinkers and D / N / R, speed, cruise line
   const arrow = d => `<svg class="blink" viewBox="0 0 24 24"><path d="${d}"/></svg>`;
   // top plate: gear between the blinkers
-  ui.left = addEl("", arrow("M10 4 2 12l8 8v-5h12V9H10z"), -.165, .32).firstChild;
-  ui.right = addEl("", arrow("M14 4l8 8-8 8v-5H2V9h12z"), .165, .32).firstChild;
-  ui.gear = addEl("gear", "N", 0, .32);
-  ui.dnr = addEl("dnr", "<span>D</span><span>N</span><span>R</span>", 0, .232);
-  ui.demo = addEl("demo", "", 0, .4);
+  ui.left = addEl("", arrow("M10 4 2 12l8 8v-5h12V9H10z"), -.165, GEAR_Y).firstChild;
+  ui.right = addEl("", arrow("M14 4l8 8-8 8v-5H2V9h12z"), .165, GEAR_Y).firstChild;
+  ui.gear = addEl("gear", "N", 0, GEAR_Y);
+  ui.dnr = addEl("dnr", "<span>D</span><span>N</span><span>R</span>", 0, GEAR_Y - .088);
+  // manual box: the knob pattern, range on the left and splitter on the right, lever cell lit
+  const gate = `<svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="16.7" y1="25" x2="16.7" y2="75"/>`
+    + `<line x1="50" y1="25" x2="50" y2="75"/><line x1="83.3" y1="25" x2="83.3" y2="75"/><line x1="16.7" y1="50" x2="83.3" y2="50"/></svg>`;
+  const cell = (id, lo, hi) => `<div class="hp-cell" data-cell="${id}"><b>${lo}</b>${hi ? `<b>${hi}</b>` : ""}</div>`;
+  ui.hpat = addEl("hpat",
+    `<div class="hp-sel range"><i>RANGE</i><span data-v="hi">HI</span><span data-v="lo">LO</span></div>`
+    + `<div class="hp-grid">${gate}${cell("R", "R1", "R2")}${cell("1", "1", "5")}${cell("3", "3", "7")}`
+    + `${cell("LO", "LO", "")}${cell("2", "2", "6")}${cell("4", "4", "8")}</div>`
+    + `<div class="hp-sel split"><i>SPLIT</i><span data-v="hi">H</span><span data-v="lo">L</span></div>`, 0, GEAR_Y - .107);
+  ui.demo = addEl("demo", "", 0, GEAR_Y + .08);
   ui.speed = addEl("speed", "0", 0, .03);
   ui.limit = addEl("limit", "<span>SPEED</span><span>LIMIT</span><b></b>", .325, .045);
   ui.limitVal = ui.limit.querySelector("b");
@@ -793,6 +880,9 @@ function initGL() {
   gl.uniform4fv(scene.u("uFieldBox"), FIELD_BOX);
   gl.uniform1f(scene.u("uLT"), LT);
   gl.uniform3f(scene.u("uEnds"), OUTLINE[0][0], OUTLINE[OUTLINE.length - 1][0], OUTLINE[OUTLINE.length - 1][1]);
+  gl.uniform1i(scene.u("uPebN"), PEBBLE ? PEBBLE_OUTLINE.length : 0);
+  gl.uniform1f(scene.u("uGearY"), GEAR_Y);
+  if (PEBBLE) gl.uniform2fv(scene.u("uPeb"), PEBBLE_OUTLINE.flat());
 
   return {
     gl, fmt, field, scene,
@@ -937,6 +1027,16 @@ function stepSim(dt) {
   s.trip += s.mph * dt / 3600;
   s.range = s.fuel * 150 * s.mpg;   // 150 gal tank
   s.grade = s.mph > 5 ? Math.round(Math.sin(s.t / 9) * 70) / 10 : null;   // rolling hills
+  // "?manual" in the demo: drive the gears through an Eaton Fuller pattern (LO, 1L .. 8H)
+  s.shifter = DEMO_MANUAL ? eatonDemo(s.gear) : null;
+}
+
+const DEMO_MANUAL = PARAMS.has("manual");
+function eatonDemo(gear) {
+  if (gear <= 0) return { cell: gear < 0 ? "R" : null, range: "lo", split: "lo", label: gear < 0 ? "R1" : "N" };
+  if (gear === 1) return { cell: "LO", range: "lo", split: "hi", label: "LO" };
+  const k = gear - 2, pos = Math.floor(k / 2) % 8, hi = pos >= 4, n = pos % 4 + 1;
+  return { cell: String(n), range: hi ? "hi" : "lo", split: k % 2 ? "hi" : "lo", label: String(hi ? n + 4 : n) };
 }
 
 function gaugeValues(s) {
@@ -959,7 +1059,7 @@ function applyLive(m) {
     oil: m.oil_psi, water: m.water_f, cruise: m.cruise, cruiseSet: m.cruise_mph,
     left: m.blinker_left, right: m.blinker_right, park: m.park_brake, jake: m.engine_brake,
     diff: m.diff_lock, beam: m.high_beam,
-    odo: m.odometer_mi, trip: m.trip_mi, mpg: m.avg_mpg, grade: m.grade_pct, range: m.range_mi,
+    odo: m.odometer_mi, trip: m.trip_mi, mpg: m.avg_mpg, grade: m.grade_pct, range: m.range_mi, shifter: m.shifter || null,
     batt: m.battery_v, oilt: m.oil_temp_f, limit: m.speed_limit_mph,
   });
   liveAt = performance.now();
@@ -998,9 +1098,27 @@ function updateOverlay(ui, s, shown, booting, now) {
   ui.limit.classList.toggle("over", s.limit > 0 && s.mph > s.limit + 1);
   // speed numbers above the limit read red, like the scale behind them
   for (const n of ui.nums.speed) n.el.classList.toggle("hot", s.limit > 0 && n.t * 90 > s.limit + .5);
-  setText(ui.gear, s.gear === 0 ? "N" : s.gear < 0 ? "R" : String(s.gear));
-  const range = s.gear > 0 ? 0 : s.gear === 0 ? 1 : 2;
-  [...ui.dnr.children].forEach((el, i) => el.classList.toggle("on", i === range));
+  const sh = s.shifter;
+  document.documentElement.classList.toggle("manual", Boolean(sh));
+  if (sh) {
+    // gear named as on the knob: 5 with the splitter as a small H / L, LO, R1 / R2
+    const split = sh.split === "hi" ? "H" : sh.split === "lo" ? "L" : "";
+    setHtml(ui.gear, sh.cell ? `${sh.label}<small>${split}</small>` : "N");
+    for (const el of ui.hpat.querySelectorAll(".hp-cell")) {
+      const on = el.dataset.cell === sh.cell;
+      el.classList.toggle("on", on);
+      // in the lit cell the number the range gives is the bright one (1 on LO range, 5 on HI)
+      const [lo, hi] = el.querySelectorAll("b");
+      lo.classList.toggle("act", on && (!hi || sh.range !== "hi"));
+      if (hi) hi.classList.toggle("act", on && sh.range === "hi");
+    }
+    for (const el of ui.hpat.querySelectorAll(".range span")) el.classList.toggle("on", el.dataset.v === sh.range);
+    for (const el of ui.hpat.querySelectorAll(".split span")) el.classList.toggle("on", el.dataset.v === sh.split);
+  } else {
+    setText(ui.gear, s.gear === 0 ? "N" : s.gear < 0 ? "R" : String(s.gear));
+    const range = s.gear > 0 ? 0 : s.gear === 0 ? 1 : 2;
+    [...ui.dnr.children].forEach((el, i) => el.classList.toggle("on", i === range));
+  }
   setText(ui.cruiseSet, s.cruise ? String(s.cruiseSet) : "—");
   ui.cruise.classList.toggle("on", booting || s.cruise);
   setHtml(ui.air, `${Math.round(s.air1)}<small>PSI</small>`);

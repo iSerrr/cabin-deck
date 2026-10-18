@@ -691,6 +691,70 @@ def update_trip(trip: dict[str, Any], data: dict[str, Any]) -> float:
     return max(0.0, odometer - trip["start"]) * KM_TO_MI
 
 
+# H-shifter: the truck's shifter table, read once per truck. Eaton Fuller style boxes (one reverse
+# slot and five forward slots: LO, 1/5, 2/6, 3/7, 4/8) get the knob pattern on the dash.
+_shifter_cache: dict[str, Any] = {"key": None, "layout": None}
+
+
+def shifter_layout(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Which slot is R / LO / 1..4 and which selector bit is the range and which the splitter."""
+    positions = list(data.get("hshifterPosition") or [])
+    masks = list(data.get("hshifterBitmask") or [])
+    gears = list(data.get("hshifterResulting") or [])
+    key = (tuple(positions), tuple(masks), tuple(gears))
+    if key == _shifter_cache["key"]:
+        return _shifter_cache["layout"]
+    slots: dict[int, dict[int, int]] = {}
+    for slot, mask, gear in zip(positions, masks, gears):
+        if slot > 0 and gear != 0:
+            slots.setdefault(int(slot), {})[int(mask)] = int(gear)
+    reverse = [slot for slot, combos in slots.items() if all(g < 0 for g in combos.values())]
+    forward = sorted((slot for slot in slots if slot not in reverse), key=lambda slot: min(slots[slot].values()))
+    layout = None
+    if len(reverse) == 1 and len(forward) == 5:
+        # the slot with most combinations shows what each selector bit does: +1 gear is the
+        # splitter, a bigger jump is the range
+        widest = slots[max(forward, key=lambda slot: len(slots[slot]))]
+        split_bit = range_bit = 0
+        for bit in (1, 2, 4, 8):
+            steps = {widest[m | bit] - widest[m] for m in widest if not m & bit and m | bit in widest}
+            if steps == {1}:
+                split_bit = bit
+            elif steps and min(steps) > 1:
+                range_bit = bit
+        cells = {reverse[0]: "R", **{slot: cell for slot, cell in zip(forward, ("LO", "1", "2", "3", "4"))}}
+        layout = {"cells": cells, "split_bit": split_bit, "range_bit": range_bit}
+    _shifter_cache.update(key=key, layout=layout)
+    return layout
+
+
+def shifter_view(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Lever position, range and splitter for the dash, or None for other gearboxes."""
+    if str(data.get("shifterType") or "") != "hshifter":
+        return None
+    layout = shifter_layout(data)
+    if layout is None:
+        return None
+    mask = sum(1 << i for i, on in enumerate(data.get("shifterToggle") or []) if on)
+    high_range = bool(mask & layout["range_bit"]) if layout["range_bit"] else None
+    high_split = bool(mask & layout["split_bit"]) if layout["split_bit"] else None
+    cell = layout["cells"].get(int(data.get("shifterSlot") or 0))
+    if cell is None:
+        label = "N"
+    elif cell == "R":
+        label = f"R{2 if high_range else 1}"
+    elif cell == "LO":
+        label = "LO"
+    else:
+        label = str(int(cell) + (4 if high_range else 0))
+    return {
+        "cell": cell,                       # R, LO, 1..4 or None in neutral
+        "range": None if high_range is None else ("hi" if high_range else "lo"),
+        "split": None if high_split is None else ("hi" if high_split else "lo"),
+        "label": label,                     # 5, LO, R2 ... (the splitter letter is shown apart)
+    }
+
+
 def compute_dash(data: dict[str, Any], trip_mi: float = 0.0, grade_pct: float | None = None) -> dict[str, Any]:
     """Instrument cluster values in the units ATS shows: mph, psi, °F, miles."""
     capacity = float(data.get("fuelCapacity") or 0.0)
@@ -721,6 +785,7 @@ def compute_dash(data: dict[str, Any], trip_mi: float = 0.0, grade_pct: float | 
         "range_mi": round(float(data.get("fuelRange") or 0.0) * KM_TO_MI),
         "avg_mpg": round(KM_TO_MI / (l_per_km * L_TO_GAL), 1) if l_per_km > 0 else 0.0,
         "grade_pct": grade_pct,   # + uphill, - downhill, None while still measuring
+        "shifter": shifter_view(data),
     }
 
 
