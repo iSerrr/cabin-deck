@@ -723,22 +723,21 @@ def shifter_layout(data: dict[str, Any]) -> dict[str, Any] | None:
             elif steps and min(steps) > 1:
                 range_bit = bit
         cells = {reverse[0]: "R", **{slot: cell for slot, cell in zip(forward, ("LO", "1", "2", "3", "4"))}}
-        layout = {"cells": cells, "split_bit": split_bit, "range_bit": range_bit}
+        # gear -> the lever slots and selector masks that give it, to name the gear the box has engaged
+        combos: dict[int, list[tuple[int, int]]] = {}
+        for slot, by_mask in slots.items():
+            for mask, gear in by_mask.items():
+                combos.setdefault(gear, []).append((slot, mask))
+        layout = {"cells": cells, "split_bit": split_bit, "range_bit": range_bit, "combos": combos}
     _shifter_cache.update(key=key, layout=layout)
     return layout
 
 
-def shifter_view(data: dict[str, Any]) -> dict[str, Any] | None:
-    """Lever position, range and splitter for the dash, or None for other gearboxes."""
-    if str(data.get("shifterType") or "") != "hshifter":
-        return None
-    layout = shifter_layout(data)
-    if layout is None:
-        return None
-    mask = sum(1 << i for i, on in enumerate(data.get("shifterToggle") or []) if on)
+def shifter_state(layout: dict[str, Any], slot: int, mask: int) -> dict[str, Any]:
+    """Name one lever slot plus selector state the way the knob does."""
     high_range = bool(mask & layout["range_bit"]) if layout["range_bit"] else None
     high_split = bool(mask & layout["split_bit"]) if layout["split_bit"] else None
-    cell = layout["cells"].get(int(data.get("shifterSlot") or 0))
+    cell = layout["cells"].get(slot)
     if cell is None:
         label = "N"
     elif cell == "R":
@@ -748,10 +747,42 @@ def shifter_view(data: dict[str, Any]) -> dict[str, Any] | None:
     else:
         label = str(int(cell) + (4 if high_range else 0))
     return {
-        "cell": cell,                       # R, LO, 1..4 or None in neutral
+        "cell": cell,
         "range": None if high_range is None else ("hi" if high_range else "lo"),
         "split": None if high_split is None else ("hi" if high_split else "lo"),
-        "label": label,                     # 5, LO, R2 ... (the splitter letter is shown apart)
+        "label": label,
+    }
+
+
+def shifter_view(data: dict[str, Any]) -> dict[str, Any] | None:
+    """What the box has engaged and what the lever and selectors ask for, or None for other boxes.
+
+    On an Eaton the splitter and range only preselect: the box engages them when the throttle lets
+    off, so for a moment the lever says 8H while the box is still in 8L. The engaged gear comes from
+    the game's gear; the request from the lever slot and selector switches.
+    """
+    if str(data.get("shifterType") or "") != "hshifter":
+        return None
+    layout = shifter_layout(data)
+    if layout is None:
+        return None
+    slot = int(data.get("shifterSlot") or 0)
+    mask = sum(1 << i for i, on in enumerate(data.get("shifterToggle") or []) if on)
+    wanted = shifter_state(layout, slot, mask)
+    gear = int(data.get("gear") or 0)
+    found = layout["combos"].get(gear, []) if gear else []
+    if found:
+        # the same lever slot first, then the same selectors, so ambiguous gears name what was asked
+        e_slot, e_mask = min(found, key=lambda c: (c[0] != slot, c[1] != mask))
+        engaged = shifter_state(layout, e_slot, e_mask)
+    else:
+        # neutral: nothing engaged; the selectors still show what is preselected
+        engaged = {**wanted, "cell": None, "label": "N"}
+    return {
+        **engaged,                          # cell (R, LO, 1..4, None), range, split, label: what is engaged
+        "lever": wanted["cell"],            # where the lever is
+        "next_range": wanted["range"],      # what the selectors preselect
+        "next_split": wanted["split"],
     }
 
 

@@ -70,6 +70,11 @@
     font-size: max(10px, calc(var(--u) * 2)); font-weight: 700; color: rgba(228,220,196,.3); box-shadow: inset 0 0 0 1px rgba(228,220,196,.1); }
   .hp-sel span.on { color: #0a1a1c; background: var(--mint); box-shadow: 0 0 calc(var(--u) * 1.2) -0.1em var(--mint); }
   .hp-sel.split span.on { background: var(--amber); box-shadow: 0 0 calc(var(--u) * 1.2) -0.1em var(--amber); }
+  /* preselected but not engaged yet (the box waits for the throttle to let off): a pulsing outline */
+  @keyframes hpNext { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+  .hp-cell.next { box-shadow: inset 0 0 0 1px var(--mint); animation: hpNext .8s ease-in-out infinite; }
+  .hp-sel span.next { color: var(--cream); box-shadow: inset 0 0 0 1.5px var(--mint); animation: hpNext .8s ease-in-out infinite; }
+  .hp-sel.split span.next { box-shadow: inset 0 0 0 1.5px var(--amber); }
   .gear small { font-size: .45em; margin-left: .08em; color: var(--amber); vertical-align: .9em; }
   .dnr span.on { color: var(--cream); box-shadow: inset 0 0 0 1px var(--mint), 0 0 calc(var(--u) * 1.2) -0.2em var(--mint); text-shadow: 0 0 calc(var(--u) * .6) rgba(119,228,237,.6); }
   /* cruise line: icon, name and the set speed; dim while cruise is off */
@@ -1028,15 +1033,20 @@ function stepSim(dt) {
   s.range = s.fuel * 150 * s.mpg;   // 150 gal tank
   s.grade = s.mph > 5 ? Math.round(Math.sin(s.t / 9) * 70) / 10 : null;   // rolling hills
   // "?manual" in the demo: drive the gears through an Eaton Fuller pattern (LO, 1L .. 8H)
-  s.shifter = DEMO_MANUAL ? eatonDemo(s.gear) : null;
+  s.shifter = DEMO_MANUAL ? eatonDemo(s.gear, s.shift > .2) : null;
 }
 
 const DEMO_MANUAL = PARAMS.has("manual");
-function eatonDemo(gear) {
-  if (gear <= 0) return { cell: gear < 0 ? "R" : null, range: "lo", split: "lo", label: gear < 0 ? "R1" : "N" };
-  if (gear === 1) return { cell: "LO", range: "lo", split: "hi", label: "LO" };
-  const k = gear - 2, pos = Math.floor(k / 2) % 8, hi = pos >= 4, n = pos % 4 + 1;
-  return { cell: String(n), range: hi ? "hi" : "lo", split: k % 2 ? "hi" : "lo", label: String(hi ? n + 4 : n) };
+function eatonDemo(gear, shifting) {
+  const name = (g) => {
+    if (g <= 0) return { cell: g < 0 ? "R" : null, range: "lo", split: "lo", label: g < 0 ? "R1" : "N" };
+    if (g === 1) return { cell: "LO", range: "lo", split: "hi", label: "LO" };
+    const k = g - 2, pos = Math.floor(k / 2) % 8, hi = pos >= 4, n = pos % 4 + 1;
+    return { cell: String(n), range: hi ? "hi" : "lo", split: k % 2 ? "hi" : "lo", label: String(hi ? n + 4 : n) };
+  };
+  // while a shift is under way the selectors already ask for the next gear, the box is still in this one
+  const now = name(shifting ? gear - 1 : gear), want = name(gear);
+  return { ...now, lever: want.cell, next_range: want.range, next_split: want.split };
 }
 
 function gaugeValues(s) {
@@ -1104,16 +1114,22 @@ function updateOverlay(ui, s, shown, booting, now) {
     // gear named as on the knob: 5 with the splitter as a small H / L, LO, R1 / R2
     const split = sh.split === "hi" ? "H" : sh.split === "lo" ? "L" : "";
     setHtml(ui.gear, sh.cell ? `${sh.label}<small>${split}</small>` : "N");
+    // lit: what the box has engaged; pulsing: what the lever or selectors ask for that it has not taken yet
     for (const el of ui.hpat.querySelectorAll(".hp-cell")) {
       const on = el.dataset.cell === sh.cell;
       el.classList.toggle("on", on);
+      el.classList.toggle("next", !on && el.dataset.cell === sh.lever);
       // in the lit cell the number the range gives is the bright one (1 on LO range, 5 on HI)
       const [lo, hi] = el.querySelectorAll("b");
       lo.classList.toggle("act", on && (!hi || sh.range !== "hi"));
       if (hi) hi.classList.toggle("act", on && sh.range === "hi");
     }
-    for (const el of ui.hpat.querySelectorAll(".range span")) el.classList.toggle("on", el.dataset.v === sh.range);
-    for (const el of ui.hpat.querySelectorAll(".split span")) el.classList.toggle("on", el.dataset.v === sh.split);
+    for (const [sel, now, next] of [[".range", sh.range, sh.next_range], [".split", sh.split, sh.next_split]]) {
+      for (const el of ui.hpat.querySelectorAll(`${sel} span`)) {
+        el.classList.toggle("on", el.dataset.v === now);
+        el.classList.toggle("next", el.dataset.v === next && next !== now);
+      }
+    }
   } else {
     setText(ui.gear, s.gear === 0 ? "N" : s.gear < 0 ? "R" : String(s.gear));
     const range = s.gear > 0 ? 0 : s.gear === 0 ? 1 : 2;
