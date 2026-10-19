@@ -1,7 +1,7 @@
 ---
 id: E1.2
 title: Update the code, the dependencies and the console itself from one console button
-status: approved
+status: done
 depends_on: [E1.1]
 touches: [overlay]
 ---
