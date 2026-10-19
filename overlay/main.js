@@ -1,3 +1,6 @@
+// Cab Deck Console: a control window (starts/stops the server, QR codes, health, log tail) plus the
+// overlay window described below.
+//
 // Cab Deck overlay: the Alpha Gen v2 dash in an always-on-top, click-through window over the game.
 // By default it is the dark dash cut to its own silhouette (the window around it is transparent);
 // put "?overlay=1" on the url in overlay.json for a see-through HUD instead. The game must run windowed or borderless;
@@ -10,6 +13,7 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, screen } = require("electron");
 const fs = require("fs");
 const path = require("path");
+const serverControl = require("./server-control");
 
 const CONFIG_PATH = path.join(__dirname, "overlay.json");
 const ASPECT = 2.17;          // same as the dash page
@@ -17,6 +21,9 @@ const MIN_WIDTH = 320;
 const RESIZE_STEP = 1.05;     // per wheel notch
 const RETRY_MS = 2000;        // reload while the server is not up yet
 const NUDGE = 1, NUDGE_FAST = 10;   // arrow keys in edit mode, px
+const QUIT_CAP_MS = 11000;    // longest wait for a managed server to stop on quit
+const DRY_RUN = process.argv.includes("--dry-run");
+const QR_MISSING = "QR codes need `npm install`: run console.bat again.";
 
 const DEFAULTS = {
   url: "http://127.0.0.1:8702/?shape=1",   // dark dash cut to its silhouette; "?overlay=1" = see-through HUD
@@ -28,9 +35,15 @@ const DEFAULTS = {
   editKey: "Control+Shift+F10",
 };
 
-let win = null;
+let win = null;               // overlay window
+let consoleWin = null;
 let config = null;
 let editing = false;
+let chosenAddress = null;
+let qrLib = null;
+let qrError = "";
+let quitting = false;
+const qrCache = new Map();    // url -> PNG data URL
 
 function loadConfig() {
   try {
@@ -69,7 +82,7 @@ function initialBounds() {
   };
 }
 
-function createWindow() {
+function createOverlayWindow() {
   win = new BrowserWindow({
     ...initialBounds(),
     transparent: true,
@@ -109,6 +122,19 @@ function setEditing(on) {
     savePlacement({ x, y, width });
     console.log(`Overlay saved at ${x},${y}, ${width} px wide.`);
   }
+  notifyConsole();
+}
+
+// One code path for the hotkeys and the console buttons.
+function toggleOverlayVisible() {
+  if (!win) return;
+  if (win.isVisible()) win.hide();
+  else win.showInactive();
+  notifyConsole();
+}
+
+function toggleOverlayEdit() {
+  if (win) setEditing(!editing);
 }
 
 // Grow (step > 0) or shrink around the centre, keeping the dash's aspect ratio.
@@ -124,8 +150,8 @@ function moveBy(dx, dy) {
   win.setPosition(Math.round(x + dx), Math.round(y + dy));
 }
 
-ipcMain.on("resize", (_e, step) => { if (editing) resizeBy(step); });
-ipcMain.on("move", (_e, dx, dy) => { if (editing) moveBy(dx, dy); });
+ipcMain.on("resize", (e, step) => { if (editing && win && e.sender === win.webContents) resizeBy(step); });
+ipcMain.on("move", (e, dx, dy) => { if (editing && win && e.sender === win.webContents) moveBy(dx, dy); });
 
 // Keyboard in edit mode (the window has focus then): +/- resize, arrows nudge.
 function onEditKey(event, input) {
@@ -141,20 +167,168 @@ function onEditKey(event, input) {
 
 function registerKeys() {
   const keys = [
-    [config.toggleKey, () => (win.isVisible() ? win.hide() : win.showInactive())],
-    [config.editKey, () => setEditing(!editing)],
+    [config.toggleKey, toggleOverlayVisible],
+    [config.editKey, toggleOverlayEdit],
   ];
   for (const [key, action] of keys) {
     if (!globalShortcut.register(key, action)) console.warn(`Hotkey ${key} is taken by another program; change it in overlay.json.`);
   }
 }
 
-app.whenReady().then(() => {
-  config = loadConfig();
-  createWindow();
-  registerKeys();
-  console.log(`Overlay showing ${config.url}. ${config.toggleKey}: show/hide, ${config.editKey}: move/resize.`);
-});
+// ---- console window ----
 
-app.on("will-quit", () => globalShortcut.unregisterAll());
-app.on("window-all-closed", () => app.quit());
+function createConsoleWindow() {
+  consoleWin = new BrowserWindow({
+    width: 1100,
+    height: 760,
+    minWidth: 900,
+    minHeight: 600,
+    center: true,
+    title: "Cab Deck Console",
+    backgroundColor: "#08090B",
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "console-preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  consoleWin.setMenu(null);
+  consoleWin.webContents.on("will-navigate", (e) => e.preventDefault());
+  consoleWin.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  consoleWin.webContents.on("did-finish-load", () => {
+    notifyConsole();
+    sendLog();
+  });
+  consoleWin.on("closed", () => {
+    consoleWin = null;
+    app.quit();
+  });
+  consoleWin.loadFile(path.join(__dirname, "console.html"));
+}
+
+function showConsole() {
+  if (!consoleWin) return;
+  if (consoleWin.isMinimized()) consoleWin.restore();
+  consoleWin.show();
+  consoleWin.focus();
+}
+
+function fromConsole(event) {
+  return Boolean(consoleWin) && event.sender === consoleWin.webContents;
+}
+
+function loadQr() {
+  if (qrLib || qrError) return qrLib;
+  try {
+    qrLib = require("qrcode");
+  } catch (err) {
+    console.warn(`Cannot load qrcode: ${err.message}`);
+    qrError = QR_MISSING;
+  }
+  return qrLib;
+}
+
+async function qrDataUrl(url) {
+  if (!qrCache.has(url)) {
+    qrCache.set(url, await qrLib.toDataURL(url, { margin: 2, width: 440, errorCorrectionLevel: "M" }));
+  }
+  return qrCache.get(url);
+}
+
+// QR codes for the panel and dash v2 of the chosen address, or null (the page explains why).
+async function buildQr(snapshot) {
+  const h = snapshot.health;
+  if ((snapshot.state !== "running" && snapshot.state !== "attached") || !h) return null;
+  const addresses = Array.isArray(h.addresses) ? h.addresses : [];
+  if (!addresses.length || !h.ports) return null;
+  if (!loadQr()) return null;
+  const address = addresses.includes(chosenAddress) ? chosenAddress : addresses[0];
+  const panelUrl = `http://${address}:${h.ports.panel}`;
+  const dash2Url = `http://${address}:${h.ports.dash2}`;
+  try {
+    return {
+      address,
+      addresses,
+      panel: { url: panelUrl, dataUrl: await qrDataUrl(panelUrl) },
+      dash2: { url: dash2Url, dataUrl: await qrDataUrl(dash2Url) },
+    };
+  } catch (err) {
+    console.warn(`Cannot make QR codes: ${err.message}`);
+    qrError = QR_MISSING;
+    return null;
+  }
+}
+
+async function fullSnapshot() {
+  const snapshot = serverControl.getSnapshot();
+  snapshot.overlay = { visible: Boolean(win) && win.isVisible(), editing };
+  snapshot.qr = await buildQr(snapshot);
+  snapshot.qrError = qrError;
+  return snapshot;
+}
+
+let notifySeq = 0;
+async function notifyConsole() {
+  if (!consoleWin || consoleWin.webContents.isLoading()) return;
+  const seq = ++notifySeq;
+  const snapshot = await fullSnapshot();
+  if (seq !== notifySeq || !consoleWin) return;   // a newer snapshot is on its way
+  consoleWin.webContents.send("console:snapshot", snapshot);
+}
+
+function sendLog() {
+  if (consoleWin && !consoleWin.webContents.isLoading()) consoleWin.webContents.send("console:log", serverControl.getLog());
+}
+
+function registerConsoleIpc() {
+  ipcMain.handle("console:get-snapshot", (e) => (fromConsole(e) ? fullSnapshot() : null));
+  ipcMain.handle("console:start", (e) => { if (fromConsole(e)) return serverControl.startServer(); });
+  ipcMain.handle("console:stop", (e) => { if (fromConsole(e)) return serverControl.stopServer(); });
+  ipcMain.handle("console:restart", (e) => { if (fromConsole(e)) return serverControl.restartServer(); });
+  ipcMain.on("console:toggle-overlay", (e) => { if (fromConsole(e)) toggleOverlayVisible(); });
+  ipcMain.on("console:toggle-overlay-edit", (e) => { if (fromConsole(e)) toggleOverlayEdit(); });
+  ipcMain.on("console:set-address", (e, address) => {
+    if (!fromConsole(e) || typeof address !== "string") return;
+    chosenAddress = address;
+    notifyConsole();
+  });
+  serverControl.events.on("change", () => notifyConsole());
+  serverControl.events.on("log", () => sendLog());
+}
+
+// ---- lifecycle ----
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", showConsole);
+
+  app.whenReady().then(() => {
+    config = loadConfig();
+    registerConsoleIpc();
+    createConsoleWindow();
+    createOverlayWindow();
+    registerKeys();
+    console.log(`Overlay showing ${config.url}. ${config.toggleKey}: show/hide, ${config.editKey}: move/resize.`);
+    serverControl.init({ dryRun: DRY_RUN });
+  });
+
+  // A managed server is stopped (R11, R12) before the app exits; an attached one is left running.
+  app.on("before-quit", (event) => {
+    if (quitting || !serverControl.isManaged()) return;
+    event.preventDefault();
+    quitting = true;
+    const cap = new Promise((resolve) => setTimeout(resolve, QUIT_CAP_MS));
+    Promise.race([serverControl.stopManagedForQuit(), cap])
+      .catch((err) => console.error(`Stopping the server on quit failed: ${err.message}`))
+      .finally(() => {
+        serverControl.killNow();
+        app.exit(0);
+      });
+  });
+
+  app.on("will-quit", () => globalShortcut.unregisterAll());
+  app.on("window-all-closed", () => app.quit());
+}
