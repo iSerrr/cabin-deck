@@ -6,3 +6,4 @@ blocker, or a pre-existing failure found on `main`.
 
 | Date | Task | Entry |
 | --- | --- | --- |
+| 2026-10-19 | S1-S4 | Implemented in `server.py` as specified. No deviations. Graceful stop returns from `Server.run()` so exit code is 0 (R6). |
