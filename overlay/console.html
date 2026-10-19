@@ -135,7 +135,7 @@ function renderHeader(s) {
   badge.textContent = s.state === "crashed" && s.exitCode ? `Crashed (${s.exitCode})` : label;
   badge.className = `badge ${color}`;
   $("dry").hidden = !s.dryRun;
-  for (const name of Object.keys(ENABLED)) $(name).disabled = !ENABLED[name].includes(s.state);
+  for (const name of Object.keys(ENABLED)) $(name).disabled = s.probing || !ENABLED[name].includes(s.state);
   $("notice").textContent = s.notice || "";
 }
 
@@ -191,6 +191,8 @@ function renderQr(s) {
   const running = s.state === "running" || s.state === "attached";
   if (running && h && Array.isArray(h.addresses) && !h.addresses.length) {
     box.append(emptyQr("No LAN address found. Is the PC on the network?"));
+  } else if (running && h && !Array.isArray(h.addresses)) {
+    box.append(emptyQr("This server is too old to report its addresses; restart it from the console."));
   } else if (s.qrError && running && h) {
     box.append(emptyQr(s.qrError));
   } else if (!s.qr) {

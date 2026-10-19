@@ -29,3 +29,4 @@ overlay/overlay.json
 .claude/checkpoint/
 .claude/usage/
 .worktrees/
+.claude/worktrees/
