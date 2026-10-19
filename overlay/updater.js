@@ -185,7 +185,7 @@ function buildNotice(f) {
   }
   if (f.pipFailed) {
     const lead = f.upToDate ? `Already up to date (commit ${f.from})` : `Updated ${f.from} → ${f.to}`;
-    return { result: "warning", text: `${lead}, but installing Python packages failed (see the log).${f.mustRun ? " The server was started anyway." : ""}` };
+    return { result: "warning", text: `${lead}, but installing Python packages failed (see the log).${f.mustRun || f.relaunch ? " The server was started anyway." : ""}` };
   }
   const base = f.upToDate ? `Already up to date (commit ${f.from}).` : `Updated ${f.from} → ${f.to}.`;
   const text = (f.venvCreated ? "Python environment created. " : "")
@@ -249,11 +249,20 @@ function consumeResultFile() {
 function runUpdate() {
   let outcome = { action: "none", mustRun: false, canStart: true };
   return serverControl.runExclusive(async () => {
+    const wasRunning = ["running", "attached"].includes(serverControl.getSnapshot().state);
     try {
       outcome = await sequence();
     } catch (err) {
       outcome = { action: "none", mustRun: false, canStart: true };
       log([`[update] ERROR: ${err.message}`]);
+      // R16: an unexpected failure after the stop still brings the server back.
+      if (wasRunning && ["stopped", "crashed"].includes(serverControl.getSnapshot().state)) {
+        try {
+          await serverControl.startUnlocked();
+        } catch (startErr) {
+          log([`[update] ERROR: cannot start the server again: ${startErr.message}`]);
+        }
+      }
       serverControl.finishUpdateLog();
       serverControl.setUpdate({
         running: false, step: null, closeRefused: null, result: "error",

@@ -76,7 +76,7 @@ function getSnapshot() {
     exitCode,
     notice: update.running && update.closeRefused ? update.closeRefused : notice,   // R30: sticky
     health,
-    update: { ...update },
+    update: (({ closeRefused, ...pub }) => pub)(update),   // closeRefused is internal (R30 notice)
     healthAgeS: failing && (child || state === "attached") ? Math.max(1, Math.floor((Date.now() - lastOkAt) / 1000)) : 0,
   };
 }
@@ -129,7 +129,9 @@ function finishUpdateLog() {
     logLines = logLines.concat(LOG_MARKER).slice(-MAX_LOG_LINES);
     logSource = "logs/cab_deck.log";
   } else {
-    return;
+    // No server: keep the update lines, and the label stops saying "Update output".
+    logLines = logLines.concat(LOG_MARKER).slice(-MAX_LOG_LINES);
+    logSource = "server";
   }
   schedulePush();
 }
