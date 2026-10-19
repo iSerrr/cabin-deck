@@ -16,7 +16,7 @@ goto start
 
 :install
 echo Installing Electron and QR code support, first start only...
-call npm install --no-audit --no-fund
+call npm install --no-save --no-audit --no-fund
 if errorlevel 1 (
     echo npm install failed.
     pause
