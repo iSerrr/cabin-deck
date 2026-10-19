@@ -1,7 +1,7 @@
 ---
 id: E1.1
 title: Run the server, the QR codes and the dash overlay from one console app
-status: approved
+status: done
 depends_on: []
 touches: [server, overlay]
 ---

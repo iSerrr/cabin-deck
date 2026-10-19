@@ -14,15 +14,16 @@ Phone / tablet ──WS /ws/dash──────►  │
  (dash/index.html :8701,             │
   dash/v2.html    :8702)             ├── config.json (layout, validated at start)
                                      └── logs/cab_deck.log (rotating)
-Overlay (Electron, overlay/) ── loads http://127.0.0.1:8702/?shape=1 in a transparent window
+Console (Electron, overlay/) ── spawns server.py, polls /api/health, POST /api/shutdown (this PC only)
+   └── overlay window ── loads http://127.0.0.1:8702/?shape=1 in a transparent window
 ```
 
 | Component | Path | Runs on | Started by |
 | --- | --- | --- | --- |
-| Server | `server.py` | Windows gaming PC (macOS: `--dry-run`) | `run.bat` (git pull, pip install, start) |
+| Server | `server.py` | Windows gaming PC (macOS: `--dry-run`) | the console (`console.bat`), or `run.bat` as a fallback |
 | Panel | `static/index.html`, `static/v3.html` | tablet browser (Android Chrome) | the server serves it on `:8000` |
 | Dash | `dash/index.html` (v1), `dash/v2.html` (v2, WebGL2) | phone, tablet or the overlay | the server serves them on `:8701` / `:8702` |
-| Overlay | `overlay/main.js`, `overlay/preload.js` | Windows gaming PC | `overlay.bat` (npm install on first run, `npm start`) |
+| Console + overlay | `overlay/` (`main.js`, `server-control.js`, `console.html`) | Windows gaming PC | `console.bat` (npm install when needed, then the app) |
 
 ## Server
 
@@ -45,9 +46,14 @@ performance watchdog.
 - **Dry run.** `--dry-run` replaces vJoy with logging and telemetry with nothing; it is how the
   server runs on macOS and in the gates.
 
-## Overlay
+## Console and overlay
 
-An Electron app without a build step. One transparent, frameless, always-on-top, click-through window
+An Electron app without a build step ("Cab Deck Console", spec E1.1). The console window (a local
+page with its own preload; process-control IPC only from that window) starts `server.py` from
+`.venv` as a child process or attaches to one already running, shows health, the log tail and QR
+codes, and stops the server through `POST /api/shutdown` (loopback, `X-Cab-Deck-Console: 1`, no
+`Origin`), falling back to a kill after 8 s; the server resets every vJoy button when it starts.
+The second window is the overlay: one transparent, frameless, always-on-top, click-through window
 showing dash v2 from `127.0.0.1:8702`; it retries while the server is down. Hotkeys: Ctrl+Shift+F9
 show/hide, Ctrl+Shift+F10 edit mode (drag, resize, nudge). Position and options live in
 `overlay/overlay.json` (local, git-ignored).
