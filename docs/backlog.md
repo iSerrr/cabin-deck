@@ -14,7 +14,5 @@ dash overlay. Level L: it controls the PC (processes, git) and touches the butto
 
 | ID | Scope | Sides | depends_on | Risk areas | Status |
 | --- | --- | --- | --- | --- | --- |
-| E1.1 | Console window that starts, stops and restarts `server.py` as a child process, shows its health and log tail; the server stops gracefully on request from this PC only, releasing every button | server, overlay | — | controls the PC, button release | todo |
+| E1.1 | Console app: a window that starts, stops and restarts `server.py` as a child process, shows its health, log tail and QR codes for the tablet; the dash overlay becomes a window of the same app; one `console.bat` launcher; the server stops gracefully on request from this PC only, releasing every button | server, overlay | — | controls the PC, button release | approved |
 | E1.2 | "Update" in the console: `git pull`, dependencies when their lockfiles changed, server restart, and an app relaunch when the console's own code changed | overlay | E1.1 | controls the PC | todo |
-| E1.3 | QR codes in the console for the panel and the dash on the PC's LAN address | server, overlay | E1.1 | — (needs a QR dependency, owner's decision) | todo |
-| E1.4 | The dash overlay as a window of the console app: show, hide and edit from the console; one launcher instead of two `.bat` files (kept as a fallback) | overlay | E1.1 | — | todo |
