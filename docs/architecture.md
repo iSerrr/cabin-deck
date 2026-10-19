@@ -67,7 +67,10 @@ show/hide, Ctrl+Shift+F10 edit mode (drag, resize, nudge). Position and options 
 - **LAN only, no auth, no HTTPS, no database** in the pilot. Consequence: any route that controls the
   PC (processes, git, files) must answer to `127.0.0.1` only.
 - **Overlay over a game mod:** the game's UI cannot reproduce live dials and bloom (PRD, stage 5).
-- **The gaming PC deploys itself** by pulling `main` (`run.bat`). There is no CI and no stage.
+- **The gaming PC deploys itself** by pulling `main`: the console's Update button (spec E1.2: graceful
+  stop, `git pull --ff-only`, venv and pip when needed, relaunch, or a `console.bat update` handover
+  when the console's npm packages changed; the outcome survives the relaunch in
+  `logs/console-update.json`), or `run.bat` as a fallback. There is no CI and no stage.
 
 ## Phases
 
