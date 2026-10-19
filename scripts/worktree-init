@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Bootstrap a git worktree so its gates can run (macOS dev machine).
+# Usage: scripts/worktree-init [server|overlay|all]   (default: all)
+#   server   creates .venv and installs requirements.txt (pyvjoy and truck-telemetry are Windows-only)
+#   overlay  provides overlay/node_modules: cloned from the main checkout when the lockfile matches,
+#            otherwise `npm ci`
+set -euo pipefail
+
+side="${1:-all}"
+root="$(git rev-parse --show-toplevel)"
+main_checkout="$(git worktree list --porcelain | sed -n '1s/^worktree //p')"
+cd "$root"
+
+init_server() {
+    if ! command -v python3 >/dev/null; then
+        echo "worktree-init: python3 is not on PATH (needs Python 3.10+)." >&2
+        exit 1
+    fi
+    if [ ! -x .venv/bin/python ]; then
+        python3 -m venv .venv
+    fi
+    .venv/bin/python -m pip install --quiet --disable-pip-version-check -r requirements.txt
+    echo "worktree-init: server ready (.venv)"
+}
+
+init_overlay() {
+    if [ -d overlay/node_modules ]; then
+        echo "worktree-init: overlay ready (node_modules already present)"
+        return
+    fi
+    local source="$main_checkout/overlay"
+    if [ "$main_checkout" != "$root" ] && [ -d "$source/node_modules" ] \
+        && cmp -s "$source/package-lock.json" overlay/package-lock.json; then
+        # APFS clone when available: fast and takes no extra disk.
+        cp -Rc "$source/node_modules" overlay/ 2>/dev/null || cp -R "$source/node_modules" overlay/
+        echo "worktree-init: overlay ready (node_modules copied from the main checkout)"
+        return
+    fi
+    if ! command -v npm >/dev/null; then
+        echo "worktree-init: npm is not on PATH (needs Node.js 18+)." >&2
+        exit 1
+    fi
+    (cd overlay && npm ci --no-audit --no-fund)
+    echo "worktree-init: overlay ready (npm ci)"
+}
+
+case "$side" in
+    server) init_server ;;
+    overlay) init_overlay ;;
+    all) init_server; init_overlay ;;
+    *) echo "Usage: scripts/worktree-init [server|overlay|all]" >&2; exit 2 ;;
+esac

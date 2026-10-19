@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# The gates of each side. A side is done only when its gates pass.
+# Usage: scripts/gates [server|overlay|all]   (default: all; run scripts/worktree-init first)
+#   server   byte-compiles the Python files, then starts `server.py --dry-run` on free ports and
+#            checks that /api/health answers ok in dry-run mode
+#   overlay  syntax-checks the Electron sources and package.json
+set -uo pipefail
+
+side="${1:-all}"
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+failed=0
+
+pass() { echo "PASS  $1"; }
+fail() { echo "FAIL  $1"; failed=1; }
+
+gate_server() {
+    local python=.venv/bin/python
+    if [ ! -x "$python" ]; then
+        fail "server: no .venv (run scripts/worktree-init server)"
+        return
+    fi
+
+    if "$python" -m py_compile server.py spike_*.py; then
+        pass "server: py_compile"
+    else
+        fail "server: py_compile"
+        return
+    fi
+
+    local ports log pid health=""
+    ports="$("$python" -c 'import socket
+s = [socket.socket() for _ in range(3)]
+for x in s: x.bind(("127.0.0.1", 0))
+print(" ".join(str(x.getsockname()[1]) for x in s))')"
+    set -- $ports
+    log="$(mktemp)"
+    "$python" server.py --dry-run --port "$1" --dash-port "$2" --dash2-port "$3" >"$log" 2>&1 &
+    pid=$!
+    for _ in $(seq 1 30); do
+        health="$(curl -fsS "http://127.0.0.1:$1/api/health" 2>/dev/null)" && break
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.5
+    done
+    kill -INT "$pid" 2>/dev/null
+    for _ in $(seq 1 10); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+    kill -KILL "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+
+    if printf '%s' "$health" | "$python" -c 'import json, sys
+h = json.load(sys.stdin)
+sys.exit(0 if h.get("status") == "ok" and h.get("input") == "dry-run" else 1)' 2>/dev/null; then
+        pass "server: dry-run smoke (/api/health ok)"
+    else
+        fail "server: dry-run smoke — server output:"
+        tail -n 20 "$log"
+    fi
+    rm -f "$log"
+}
+
+gate_overlay() {
+    if ! command -v node >/dev/null; then
+        fail "overlay: node is not on PATH (needs Node.js 18+)"
+        return
+    fi
+    local file ok=1
+    for file in overlay/*.js; do
+        node --check "$file" || ok=0
+    done
+    node -e 'JSON.parse(require("fs").readFileSync("overlay/package.json", "utf8"))' || ok=0
+    if [ "$ok" = 1 ]; then pass "overlay: node --check"; else fail "overlay: node --check"; fi
+}
+
+case "$side" in
+    server) gate_server ;;
+    overlay) gate_overlay ;;
+    all) gate_server; gate_overlay ;;
+    *) echo "Usage: scripts/gates [server|overlay|all]" >&2; exit 2 ;;
+esac
+
+exit "$failed"

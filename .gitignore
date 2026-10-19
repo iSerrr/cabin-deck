@@ -21,3 +21,11 @@ logs/
 # Overlay app (Electron)
 overlay/node_modules/
 overlay/overlay.json
+
+# Claude Code: local state, not part of the orchestration
+.claude/settings.local.json
+.claude/launch.json
+.claude/tools/
+.claude/checkpoint/
+.claude/usage/
+.worktrees/
