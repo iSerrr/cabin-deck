@@ -21,9 +21,11 @@ const ATTACHED_MISSES = 3;      // failed polls before an attached server counts
 const MAX_LOG_LINES = 500;
 const LOG_PUSH_MS = 100;
 
-const NO_PYTHON = "Python environment not found. Run run.bat once to create it, then press Start.";
+const NO_PYTHON = "Python environment not found. Press Update to create it.";
 
 const events = new EventEmitter();
+const LOG_MARKER = "---- server ----";   // separates update lines from server lines (R25)
+
 const isWindows = process.platform === "win32";
 
 let dryRun = false;
@@ -42,6 +44,7 @@ let logSource = "server";       // "server" (child output) or "attached" (logs/c
 let partial = { out: "", err: "" };
 let pushTimer = null;
 let busy = null;                // promise of the running operation
+let update = { running: false, step: null, from: null, to: null, notice: "", result: null };
 let stopping = false;           // a stop was requested by us, so a child exit is not a crash
 
 function pythonPath() {
@@ -73,6 +76,7 @@ function getSnapshot() {
     exitCode,
     notice,
     health,
+    update: { ...update },
     healthAgeS: failing && (child || state === "attached") ? Math.max(1, Math.floor((Date.now() - lastOkAt) / 1000)) : 0,
   };
 }
@@ -95,6 +99,38 @@ function addLines(lines) {
   if (!lines.length) return;
   logLines = logLines.concat(lines).slice(-MAX_LOG_LINES);
   schedulePush();
+}
+
+// Starts the log tail of a server run: after an update the update lines stay above a marker (R25).
+function resetServerLog(source) {
+  logLines = logSource === "update" ? logLines.concat(LOG_MARKER).slice(-MAX_LOG_LINES) : [];
+  logSource = source;
+  schedulePush();
+}
+
+// Update lines are added to the tail through appendLog; useUpdateLog switches the label to "update".
+function appendLog(lines) {
+  addLines(lines);
+}
+
+function useUpdateLog(clear) {
+  if (clear) logLines = [];
+  logSource = "update";
+  schedulePush();
+}
+
+function setUpdate(patch) {
+  update = { ...update, ...patch };
+  emitChange();
+}
+
+function setNotice(text) {
+  notice = text;
+  emitChange();
+}
+
+function markUnavailable() {
+  setState("unavailable", NO_PYTHON);
 }
 
 function setLogLines(lines, source) {
@@ -186,7 +222,10 @@ async function pollLogs() {
     const res = await request("/api/logs?lines=200", {}, 1500);
     if (!res.ok) return;
     const text = await res.text();
-    if (state === "attached") setLogLines(text.split(/\r?\n/).filter(Boolean), "logs/cab_deck.log");
+    if (state !== "attached") return;
+    const fresh = text.split(/\r?\n/).filter(Boolean);
+    const at = logLines.lastIndexOf(LOG_MARKER);   // keep the update lines above the marker
+    setLogLines((at >= 0 ? logLines.slice(0, at + 1) : []).concat(fresh), "logs/cab_deck.log");
   } catch (err) {
     // The next health poll decides whether the server is gone.
   }
@@ -210,8 +249,7 @@ function attach(body) {
   lastOkAt = Date.now();
   failing = false;
   misses = 0;
-  logLines = [];
-  logSource = "logs/cab_deck.log";
+  resetServerLog("logs/cab_deck.log");
   setState("attached", "A server was already running; the console did not start it.");
   startPolling(true);
 }
@@ -224,8 +262,7 @@ function spawnServer() {
   }
   const args = ["-u", "server.py"];
   if (dryRun) args.push("--dry-run");
-  logLines = [];
-  logSource = "server";
+  resetServerLog("server");
   partial = { out: "", err: "" };
   exitCode = null;
   stopping = false;
@@ -357,7 +394,7 @@ async function doStop() {
 
 // ---- public API ----
 
-// One operation at a time: a second call while one runs is ignored.
+// One operation at a time: a second call while one runs is ignored. Also used by the updater (R2).
 function exclusive(fn) {
   if (busy) return busy.then(() => undefined);
   busy = fn().catch((err) => {
@@ -417,6 +454,14 @@ module.exports = {
   startServer,
   stopServer,
   restartServer,
+  runExclusive: exclusive,
+  startUnlocked: doStart,
+  stopUnlocked: doStop,
+  appendLog,
+  useUpdateLog,
+  setUpdate,
+  setNotice,
+  markUnavailable,
   stopManagedForQuit,
   killNow,
   isManaged,
