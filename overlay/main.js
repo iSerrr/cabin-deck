@@ -11,9 +11,11 @@
 //                 (Shift = 10 px); press again to save and lock
 
 const { app, BrowserWindow, globalShortcut, ipcMain, screen } = require("electron");
+const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const serverControl = require("./server-control");
+const updater = require("./updater");
 
 const CONFIG_PATH = path.join(__dirname, "overlay.json");
 const ASPECT = 2.17;          // same as the dash page
@@ -23,6 +25,8 @@ const RETRY_MS = 2000;        // reload while the server is not up yet
 const NUDGE = 1, NUDGE_FAST = 10;   // arrow keys in edit mode, px
 const QUIT_CAP_MS = 11000;    // longest wait for a managed server to stop on quit
 const DRY_RUN = process.argv.includes("--dry-run");
+const REPO = path.resolve(__dirname, "..");
+const WAIT_FOR_UPDATE = "Wait for the update to finish; every step stops by itself within its time limit.";
 const QR_MISSING = "QR codes need `npm install`: run console.bat again.";
 
 const DEFAULTS = {
@@ -201,6 +205,11 @@ function createConsoleWindow() {
     notifyConsole();
     sendLog();
   });
+  consoleWin.on("close", (e) => {
+    if (!updateRunning()) return;
+    e.preventDefault();
+    serverControl.setNotice(WAIT_FOR_UPDATE);   // R30
+  });
   consoleWin.on("closed", () => {
     consoleWin = null;
     app.quit();
@@ -282,11 +291,63 @@ function sendLog() {
   if (consoleWin && !consoleWin.webContents.isLoading()) consoleWin.webContents.send("console:log", serverControl.getLog());
 }
 
+function updateRunning() {
+  return serverControl.getSnapshot().update.running;
+}
+
+// R17, R19: the server is already stopped; start the same app again after this process exits.
+function relaunchConsole() {
+  app.releaseSingleInstanceLock();
+  app.relaunch({ execPath: process.execPath, args: [app.getAppPath(), ...(DRY_RUN ? ["--dry-run"] : [])] });
+  app.exit(0);
+}
+
+// R18 (Windows): console.bat installs the console's packages while no Electron file is in use.
+async function handoverToBat(outcome) {
+  await new Promise((resolve) => setTimeout(resolve, 600));   // let the console show the notice
+  app.releaseSingleInstanceLock();
+  const line = `""${path.join(REPO, "console.bat")}" update ${process.pid}${DRY_RUN ? " dry" : ""}"`;
+  let failure = null;
+  try {
+    const child = spawn(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", line], {
+      cwd: REPO,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: false,
+      windowsVerbatimArguments: true,
+    });
+    failure = await new Promise((resolve) => {
+      child.once("spawn", () => resolve(null));
+      child.once("error", resolve);
+    });
+    if (!failure) child.unref();
+  } catch (err) {
+    failure = err;
+  }
+  if (!failure) {
+    app.exit(0);
+    return;
+  }
+  app.requestSingleInstanceLock();
+  await updater.restoreAfterFailedHandover(
+    outcome,
+    `Cannot start console.bat for the update: ${failure.message}. Close the console and run console.bat.`,
+  );
+}
+
+async function runUpdateFromConsole() {
+  if (updateRunning()) return;
+  const outcome = await updater.runUpdate();
+  if (outcome.action === "relaunch") relaunchConsole();
+  else if (outcome.action === "handover") await handoverToBat(outcome);
+}
+
 function registerConsoleIpc() {
   ipcMain.handle("console:get-snapshot", (e) => (fromConsole(e) ? fullSnapshot() : null));
   ipcMain.handle("console:start", (e) => { if (fromConsole(e)) return serverControl.startServer(); });
   ipcMain.handle("console:stop", (e) => { if (fromConsole(e)) return serverControl.stopServer(); });
   ipcMain.handle("console:restart", (e) => { if (fromConsole(e)) return serverControl.restartServer(); });
+  ipcMain.handle("console:update", (e) => { if (fromConsole(e)) return runUpdateFromConsole(); });
   ipcMain.on("console:toggle-overlay", (e) => { if (fromConsole(e)) toggleOverlayVisible(); });
   ipcMain.on("console:toggle-overlay-edit", (e) => { if (fromConsole(e)) toggleOverlayEdit(); });
   ipcMain.on("console:set-address", (e, address) => {
@@ -312,11 +373,17 @@ if (!app.requestSingleInstanceLock()) {
     createOverlayWindow();
     registerKeys();
     console.log(`Overlay showing ${config.url}. ${config.toggleKey}: show/hide, ${config.editKey}: move/resize.`);
+    updater.consumeResultFile();   // the note of a previous console, before the server starts (R22)
     serverControl.init({ dryRun: DRY_RUN });
   });
 
   // A managed server is stopped (R11, R12) before the app exits; an attached one is left running.
   app.on("before-quit", (event) => {
+    if (updateRunning()) {   // R30
+      event.preventDefault();
+      serverControl.setNotice(WAIT_FOR_UPDATE);
+      return;
+    }
     if (quitting || !serverControl.isManaged()) return;
     event.preventDefault();
     quitting = true;
