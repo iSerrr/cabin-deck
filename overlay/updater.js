@@ -249,7 +249,17 @@ function consumeResultFile() {
 function runUpdate() {
   let outcome = { action: "none", mustRun: false, canStart: true };
   return serverControl.runExclusive(async () => {
-    outcome = await sequence();
+    try {
+      outcome = await sequence();
+    } catch (err) {
+      outcome = { action: "none", mustRun: false, canStart: true };
+      log([`[update] ERROR: ${err.message}`]);
+      serverControl.finishUpdateLog();
+      serverControl.setUpdate({
+        running: false, step: null, closeRefused: null, result: "error",
+        notice: `Update failed: ${err.message} (see the log).`,
+      });
+    }
   }).then(() => outcome);
 }
 
@@ -259,7 +269,8 @@ async function end(notice, mustRun, canStart) {
     serverControl.setUpdate({ step: "starting" });
     await serverControl.startUnlocked();
   }
-  serverControl.setUpdate({ running: false, step: null, notice: notice.text, result: notice.result });
+  serverControl.finishUpdateLog();
+  serverControl.setUpdate({ running: false, step: null, closeRefused: null, notice: notice.text, result: notice.result });
   return { action: "none", mustRun, canStart };
 }
 
@@ -372,8 +383,10 @@ async function sequence() {
 // Used by main.js when the handover could not start: the server goes back as it was (R16).
 function restoreAfterFailedHandover(outcome, text) {
   discardResultFile();
-  serverControl.setUpdate({ running: false, step: null, notice: text, result: "error" });
-  if (outcome.mustRun && outcome.canStart) return serverControl.startServer();
+  const restart = outcome.mustRun && outcome.canStart;
+  if (!restart) serverControl.finishUpdateLog();
+  serverControl.setUpdate({ running: false, step: null, closeRefused: null, notice: text, result: "error" });
+  if (restart) return serverControl.startServer();
   return Promise.resolve();
 }
 

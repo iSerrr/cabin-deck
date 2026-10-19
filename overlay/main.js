@@ -208,7 +208,7 @@ function createConsoleWindow() {
   consoleWin.on("close", (e) => {
     if (!updateRunning()) return;
     e.preventDefault();
-    serverControl.setNotice(WAIT_FOR_UPDATE);   // R30
+    serverControl.setUpdate({ closeRefused: WAIT_FOR_UPDATE });   // R30
   });
   consoleWin.on("closed", () => {
     consoleWin = null;
@@ -344,9 +344,9 @@ async function runUpdateFromConsole() {
 
 function registerConsoleIpc() {
   ipcMain.handle("console:get-snapshot", (e) => (fromConsole(e) ? fullSnapshot() : null));
-  ipcMain.handle("console:start", (e) => { if (fromConsole(e)) return serverControl.startServer(); });
-  ipcMain.handle("console:stop", (e) => { if (fromConsole(e)) return serverControl.stopServer(); });
-  ipcMain.handle("console:restart", (e) => { if (fromConsole(e)) return serverControl.restartServer(); });
+  ipcMain.handle("console:start", (e) => { if (fromConsole(e) && !updateRunning()) return serverControl.startServer(); });
+  ipcMain.handle("console:stop", (e) => { if (fromConsole(e) && !updateRunning()) return serverControl.stopServer(); });
+  ipcMain.handle("console:restart", (e) => { if (fromConsole(e) && !updateRunning()) return serverControl.restartServer(); });
   ipcMain.handle("console:update", (e) => { if (fromConsole(e)) return runUpdateFromConsole(); });
   ipcMain.on("console:toggle-overlay", (e) => { if (fromConsole(e)) toggleOverlayVisible(); });
   ipcMain.on("console:toggle-overlay-edit", (e) => { if (fromConsole(e)) toggleOverlayEdit(); });
@@ -381,7 +381,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", (event) => {
     if (updateRunning()) {   // R30
       event.preventDefault();
-      serverControl.setNotice(WAIT_FOR_UPDATE);
+      serverControl.setUpdate({ closeRefused: WAIT_FOR_UPDATE });
       return;
     }
     if (quitting || !serverControl.isManaged()) return;

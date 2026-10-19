@@ -44,7 +44,7 @@ let logSource = "server";       // "server" (child output) or "attached" (logs/c
 let partial = { out: "", err: "" };
 let pushTimer = null;
 let busy = null;                // promise of the running operation
-let update = { running: false, step: null, from: null, to: null, notice: "", result: null };
+let update = { running: false, step: null, from: null, to: null, notice: "", result: null, closeRefused: null };
 let stopping = false;           // a stop was requested by us, so a child exit is not a crash
 
 function pythonPath() {
@@ -74,7 +74,7 @@ function getSnapshot() {
     managed: child !== null,
     dryRun,
     exitCode,
-    notice,
+    notice: update.running && update.closeRefused ? update.closeRefused : notice,   // R30: sticky
     health,
     update: { ...update },
     healthAgeS: failing && (child || state === "attached") ? Math.max(1, Math.floor((Date.now() - lastOkAt) / 1000)) : 0,
@@ -116,6 +116,21 @@ function appendLog(lines) {
 function useUpdateLog(clear) {
   if (clear) logLines = [];
   logSource = "update";
+  schedulePush();
+}
+
+// When an update ends without starting a server, the tail label follows what produces output now.
+function finishUpdateLog() {
+  if (logSource !== "update") return;
+  if (child) {
+    logLines = logLines.concat(LOG_MARKER).slice(-MAX_LOG_LINES);
+    logSource = "server";
+  } else if (state === "attached") {
+    logLines = logLines.concat(LOG_MARKER).slice(-MAX_LOG_LINES);
+    logSource = "logs/cab_deck.log";
+  } else {
+    return;
+  }
   schedulePush();
 }
 
@@ -222,10 +237,11 @@ async function pollLogs() {
     const res = await request("/api/logs?lines=200", {}, 1500);
     if (!res.ok) return;
     const text = await res.text();
-    if (state !== "attached") return;
+    if (state !== "attached" || update.running) return;   // update lines are never replaced mid-update
     const fresh = text.split(/\r?\n/).filter(Boolean);
     const at = logLines.lastIndexOf(LOG_MARKER);   // keep the update lines above the marker
-    setLogLines((at >= 0 ? logLines.slice(0, at + 1) : []).concat(fresh), "logs/cab_deck.log");
+    const kept = at >= 0 ? logLines.slice(0, at + 1) : (logSource === "update" ? logLines.concat(LOG_MARKER) : []);
+    setLogLines(kept.concat(fresh), "logs/cab_deck.log");
   } catch (err) {
     // The next health poll decides whether the server is gone.
   }
@@ -459,6 +475,7 @@ module.exports = {
   stopUnlocked: doStop,
   appendLog,
   useUpdateLog,
+  finishUpdateLog,
   setUpdate,
   setNotice,
   markUnavailable,
