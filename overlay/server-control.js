@@ -67,6 +67,7 @@ function setState(next, text) {
 function getSnapshot() {
   return {
     state: state === "initial" ? "starting" : state,   // "initial" = probing for a running server
+    probing: state === "initial",                         // no action is accepted while probing
     managed: child !== null,
     dryRun,
     exitCode,
@@ -311,7 +312,8 @@ async function stopManaged(proc) {
     proc.kill("SIGTERM");
     if (await waitForExit(proc, TERM_WAIT_MS)) return true;
   }
-  if (child === proc) proc.kill();
+  // Last resort: TerminateProcess on Windows; SIGKILL elsewhere, since the SIGTERM above was ignored.
+  if (child === proc) proc.kill(isWindows ? undefined : "SIGKILL");
   await waitForExit(proc, 2000);
   return false;
 }
