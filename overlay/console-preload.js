@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("consoleApi", {
   start: () => ipcRenderer.invoke("console:start"),
   stop: () => ipcRenderer.invoke("console:stop"),
   restart: () => ipcRenderer.invoke("console:restart"),
+  update: () => ipcRenderer.invoke("console:update"),
   toggleOverlay: () => ipcRenderer.send("console:toggle-overlay"),
   toggleOverlayEdit: () => ipcRenderer.send("console:toggle-overlay-edit"),
   setAddress: (address) => ipcRenderer.send("console:set-address", String(address)),

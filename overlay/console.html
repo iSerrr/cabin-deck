@@ -25,6 +25,11 @@
   button:hover:not(:disabled) { background: #252B3A; }
   button:disabled { opacity: .35; cursor: default; }
   #notice { min-height: 20px; color: var(--amber); }
+  #update-notice { min-height: 20px; margin-top: -8px; }
+  #update-notice.ok { color: var(--green); } #update-notice.warning { color: var(--amber); }
+  #update-notice.error { color: var(--red); }
+  #commits { font: 12px ui-monospace, Consolas, monospace; }
+  .l-update { color: var(--dim); }
   main { display: flex; gap: 12px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
   #tablet { flex: 1.3; min-width: 0; }
@@ -55,13 +60,16 @@
 <header>
   <h1>Cab Deck Console</h1>
   <span id="state" class="badge grey">Starting…</span>
+  <span id="updating" class="badge amber" hidden><span id="step"></span> <span id="commits"></span></span>
   <span id="dry" class="badge dry" hidden>DRY RUN</span>
   <span class="spacer"></span>
   <button id="start" disabled>Start</button>
   <button id="stop" disabled>Stop</button>
   <button id="restart" disabled>Restart</button>
+  <button id="update" disabled>Update</button>
 </header>
 <div id="notice"></div>
+<div id="update-notice"></div>
 
 <main>
   <section id="tablet" class="card">
@@ -114,6 +122,18 @@ const ENABLED = {
   start: ["stopped", "crashed", "unavailable"],
   stop: ["starting", "running", "attached"],
   restart: ["running", "attached", "crashed"],
+  update: ["running", "attached", "stopped", "crashed", "unavailable"],
+};
+const STEPS = {
+  checking: "Checking the repository",
+  stopping: "Stopping the server",
+  pulling: "Pulling code",
+  venv: "Creating the Python environment",
+  pip: "Installing Python packages",
+  npm: "Installing console packages",
+  starting: "Starting the server",
+  relaunching: "Relaunching the console",
+  handover: "Closing for the package install",
 };
 
 let last = null;
@@ -135,8 +155,17 @@ function renderHeader(s) {
   badge.textContent = s.state === "crashed" && s.exitCode ? `Crashed (${s.exitCode})` : label;
   badge.className = `badge ${color}`;
   $("dry").hidden = !s.dryRun;
-  for (const name of Object.keys(ENABLED)) $(name).disabled = s.probing || !ENABLED[name].includes(s.state);
+  const u = s.update || { running: false };
+  for (const name of Object.keys(ENABLED)) $(name).disabled = s.probing || u.running || !ENABLED[name].includes(s.state);
   $("notice").textContent = s.notice || "";
+  $("updating").hidden = !u.running;
+  if (u.running) {
+    $("step").textContent = `Updating: ${STEPS[u.step] || u.step || ""}`;
+    $("commits").textContent = u.from ? (u.to ? `${u.from} → ${u.to}` : u.from) : "";
+  }
+  const un = $("update-notice");
+  un.textContent = u.notice || "";
+  un.className = u.result || "";
 }
 
 function renderHealth(s) {
@@ -225,13 +254,14 @@ function render(s) {
 function renderLog(log) {
   const el = $("log");
   const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-  $("logtitle").textContent = log.source === "server" ? "Server output" : log.source;
+  $("logtitle").textContent = log.source === "server" ? "Server output" : log.source === "update" ? "Update output" : log.source;
   const frag = document.createDocumentFragment();
   for (const line of log.lines) {
     const row = document.createElement("div");
     row.textContent = line || " ";
     if (line.includes("ERROR")) row.className = "l-error";
     else if (line.includes("WARNING")) row.className = "l-warn";
+    else if (line.startsWith("[update]")) row.className = "l-update";
     frag.append(row);
   }
   el.replaceChildren(frag);
@@ -241,6 +271,7 @@ function renderLog(log) {
 $("start").addEventListener("click", () => api.start());
 $("stop").addEventListener("click", () => api.stop());
 $("restart").addEventListener("click", () => api.restart());
+$("update").addEventListener("click", () => api.update());
 $("ov-toggle").addEventListener("click", () => api.toggleOverlay());
 $("ov-edit").addEventListener("click", () => api.toggleOverlayEdit());
 
