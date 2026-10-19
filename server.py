@@ -26,7 +26,7 @@ from typing import Any, AsyncIterator, Callable
 
 import uvicorn
 from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -249,10 +249,16 @@ class DeckState:
     pace: DrivePace = field(default_factory=DrivePace)
     grade: GradeTrack = field(default_factory=GradeTrack)
     plan: JobPlan = field(default_factory=JobPlan)
+    addresses: list[str] = field(default_factory=list)
+    ports: dict[str, int] = field(default_factory=dict)
+    request_shutdown: Callable[[], None] | None = None
 
     @property
     def controls_by_id(self) -> dict[str, dict[str, Any]]:
         return self.config["controls_by_id"]
+
+
+LOOPBACK_HOSTS = {"127.0.0.1", "::1"}
 
 
 # --- Logging -----------------------------------------------------------------
@@ -506,6 +512,12 @@ def open_vjoy(device_id: int) -> tuple[SetButton, int | None]:
             f"Cannot open vJoy device {device_id}: {error!r}. Check that vJoy is installed, the device is "
             "enabled in 'Configure vJoy', and vJoyInterface.dll matches the driver version."
         ) from error
+
+    try:
+        device.reset_buttons()
+        log.info("vJoy device %d: all buttons reset.", device_id)
+    except vJoyException as error:
+        log.warning("vJoy device %d: could not reset buttons: %r", device_id, error)
 
     def set_button(number: int, pressed: bool) -> None:
         try:
@@ -1423,6 +1435,24 @@ def create_app(state: DeckState, dash_pages: dict[int, Path]) -> FastAPI:
             log.info("Dash disconnected: %s (dash clients: %d, frames it missed: %d, slow sends: %d)",
                      client, len(state.dash_sockets), box.dropped, box.slow_sends)
 
+    @app.post("/api/shutdown")
+    async def shutdown(request: Request) -> JSONResponse:
+        client = request.client.host if request.client else "unknown"
+        allowed = (
+            client in LOOPBACK_HOSTS
+            and request.headers.get("x-cab-deck-console") == "1"
+            and "origin" not in request.headers
+        )
+        if not allowed:
+            log.warning("Refused shutdown request from %s", client)
+            return JSONResponse(
+                {"detail": "Shutdown is allowed only from the Cab Deck console on this PC."}, status_code=403
+            )
+        log.info("Shutdown requested by the console.")
+        if state.request_shutdown is not None:
+            asyncio.get_running_loop().call_later(0.2, state.request_shutdown)
+        return JSONResponse({"status": "stopping"}, status_code=202)
+
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
         return {
@@ -1440,6 +1470,8 @@ def create_app(state: DeckState, dash_pages: dict[int, Path]) -> FastAPI:
             "commit": state.commit,
             "uptime_s": round(time.monotonic() - state.started_at),
             "last_error": state.errors.last,
+            "addresses": state.addresses,
+            "ports": state.ports,
             "perf": {
                 "worst_lag_ms_this_minute": round(state.perf.lag_max * 1000),
                 "stalls_this_minute": state.perf.stalls,
@@ -1584,7 +1616,10 @@ def main() -> None:
             state.switches[control["id"]] = SwitchState()
 
     log.info("Loaded %d controls. vJoy buttons available: %s", len(state.controls_by_id), vjoy_buttons or "unknown")
-    addresses = local_ipv4_addresses() or ["<this-pc-ip>"]
+    lan_addresses = local_ipv4_addresses()
+    addresses = lan_addresses or ["<this-pc-ip>"]
+    state.addresses = list(lan_addresses)
+    state.ports = {"panel": args.port, "dash": args.dash_port, "dash2": args.dash2_port}
     try:
         sockets = [bind_socket(port) for port in (args.port, args.dash_port, args.dash2_port)]
     except OSError as error:
@@ -1600,8 +1635,16 @@ def main() -> None:
     print("Press Ctrl+C to stop.\n", flush=True)
 
     dash_pages = {args.dash_port: DASH_INDEX_PATH, args.dash2_port: DASH_V2_PATH}
-    config = uvicorn.Config(create_app(state, dash_pages), log_config=None, access_log=False)
-    uvicorn.Server(config).run(sockets=sockets)
+    config = uvicorn.Config(
+        create_app(state, dash_pages),
+        log_config=None,
+        access_log=False,
+        proxy_headers=False,
+        timeout_graceful_shutdown=3,
+    )
+    server = uvicorn.Server(config)
+    state.request_shutdown = lambda: setattr(server, "should_exit", True)
+    server.run(sockets=sockets)
 
 
 if __name__ == "__main__":
