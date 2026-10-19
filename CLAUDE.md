@@ -104,12 +104,12 @@ ends at the merge, and the report gives the owner the steps to run on the PC.
 
 1. **Spec.** `/spec <id>`: the `architect` turns a backlog epic into `docs/specs/<id>-<slug>/` and
    opens a spec PR (`spec/<id>-<slug>`) with `status: draft`.
-2. **Approval (gate one).** The owner sets `status: approved` and merges.
+2. **Approval (gate one).** The main session sets `status: approved` and merges (Mode below).
 3. **Delivery.** `/deliver <id>` runs [`.claude/workflows/deliver.js`](.claude/workflows/deliver.js):
    one `executor` per side, each in its own worktree, against the spec's contract; each side passes
    its gates, then the `reviewer` reviews it, with fix rounds.
 4. **Pull request (gate two).** One PR per spec (`feat/<id>-<slug>`) with `review.md` and the owner's
-   steps for the PC. The owner merges.
+   steps for the PC. Merged per the Mode below.
 
 A **change** (bug fix, copy, small contained fix) skips the spec but still goes through a branch, its
 side's gates and a PR. The **main session** is the conductor: outside level S it never writes product
@@ -140,7 +140,10 @@ stop.
 
 ## Mode
 
-- **Owner-gated** (2026-10-19): the owner approves specs and merges PRs.
+- **Autonomy B** (2026-10-19, owner's decision for this pet project): the main session approves
+  specs and merges PRs itself, including those in the risk areas above (the owner waived the
+  risk-area gate). Delivery PRs merge only with reviewer `approve` and green gates; blocked or
+  needs-human PRs stay drafts and the owner is told. The owner checks on the gaming PC at the end.
 - **Demo mode** (pilot, until the owner lifts it): no new tests and no test framework; gates run once
   before reporting done; one review round is the norm (`maxFixRounds: 1`); acceptance is a checklist
   marked `[mac]` (dry-run) or `[pc]` (gaming PC).
