@@ -1,11 +1,16 @@
 {
-  "name": "cab-deck-overlay",
+  "name": "cab-deck-console",
+  "productName": "Cab Deck Console",
   "version": "0.1.0",
   "private": true,
-  "description": "The Alpha Gen v2 dash in a transparent, click-through window over the game",
+  "description": "Cab Deck control console: runs the server, shows QR codes and health, and controls the dash overlay window",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "start:dry": "electron . --dry-run"
+  },
+  "dependencies": {
+    "qrcode": "1.5.4"
   },
   "devDependencies": {
     "electron": "33.2.1"
