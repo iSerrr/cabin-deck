@@ -111,6 +111,7 @@ INDICATORS = (
     "air_pressure",
     "fuel",
     "nav",
+    "cruise",
 )
 GAUGE_INDICATORS = ("air_pressure", "fuel", "nav")
 # Switches whose position the game reports exactly (instead of on/off only).
@@ -664,6 +665,13 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "value": value,
         }
 
+    # value is the set speed in whole mph (0 when none is set).
+    cruise_on = bool(data.get("cruiseControl"))
+    cruise = {
+        "level": "on" if cruise_on else "off",
+        "value": round(float(data.get("cruiseControlSpeed") or 0.0) * MS_TO_MPH),
+    }
+
     trailers = data.get("trailer") or [{}]
     hazard_phase = data.get("blinkerLeftOn") or data.get("blinkerRightOn")
     return {
@@ -688,6 +696,7 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "air_pressure": air_pressure,
         "fuel": fuel,
         "nav": nav,
+        "cruise": cruise,
     }
 
 

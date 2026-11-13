@@ -2,6 +2,7 @@
 
 ## Done
 
+- v3 panel: gearbox rockers (PR 13) and cruise control (vJoy 26 on/off, 27 resume, 28 / 29 hold for − / +, set speed from telemetry). v3 reloads after an update. Owner's gaming-PC checks pending.
 - Gearbox on the panel: RANGE and SPLIT as telemetry-synced toggles (vJoy 24 = Shifter Toggle 1, 25 = Shifter Toggle 2; 26-27 free). Owner's gaming-PC check pending.
 - Review notes on E1.1 and E1.2 fixed (PRs 5 and 8).
 
@@ -16,7 +17,7 @@
 
 ## Next
 
-- The owner's checks on the gaming PC for E1.1 and E1.2, and for the gearbox (bind vJoy 24 / 25 to Shifter Toggle 1 / 2 in ATS, check that a tap on the selected position does nothing and the halves follow the game).
+- The owner's checks on the gaming PC for E1.1 and E1.2, and for the gearbox (bind vJoy 24 / 25 to Shifter Toggle 1 / 2 in ATS, check that a tap on the selected position does nothing and the halves follow the game), and for cruise control on v3 (bind vJoy 26-29 in ATS)..
 
 ## Blocked / needs human
 
