@@ -1293,13 +1293,14 @@ async def move_switch(state: DeckState, control: dict[str, Any]) -> None:
 # --- Protocol ----------------------------------------------------------------
 
 
-def layout_message(config: dict[str, Any]) -> dict[str, Any]:
+def layout_message(config: dict[str, Any], commit: str) -> dict[str, Any]:
+    """Sent on every connect. The commit lets an open panel see that the server was updated."""
     keys = ("id", "type", "label", "indicator", "positions", "min", "max")
     controls = [
         {key: control[key] for key in keys if key in control}
         for control in config["controls_by_id"].values()
     ]
-    return {"type": "layout", "controls": controls, "bindings": config["bindings"]}
+    return {"type": "layout", "controls": controls, "bindings": config["bindings"], "commit": commit}
 
 
 def state_message(state: DeckState) -> dict[str, Any]:
@@ -1507,7 +1508,7 @@ def create_app(state: DeckState, dash_pages: dict[int, Path]) -> FastAPI:
         held: set[int] = set()
         log.info("Panel connected: %s (clients: %d)", client, len(state.sockets) + 1)
         try:
-            await websocket.send_json(layout_message(state.config))
+            await websocket.send_json(layout_message(state.config, state.commit))
             await websocket.send_json(state_message(state))
             box = open_outbox(state.sockets, websocket, f"panel {client}")
             post(box, state_message(state))   # in case the state changed while the first messages went out
