@@ -469,7 +469,7 @@
   #setup { position: absolute; left: 14px; right: 14px; top: 84px; bottom: 14px; display: none; }
   #panel.setup-open #setup { display: block; }
   #setup .zone { height: 100%; }
-  #setup .zone-in { grid-template-rows: 24px repeat(5, minmax(0, 1fr)) 64px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  #setup .zone-in { grid-template-rows: 24px repeat(4, minmax(0, 1fr)) 64px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .bind { align-items: flex-start; justify-content: center; gap: 2px; padding: 8px 12px; }
   .bind .num { font-size: 22px; font-weight: 700; letter-spacing: .04em; color: #E6E8EA; font-variant-numeric: tabular-nums; }
   .bind .game { font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--faint); }
@@ -1253,23 +1253,33 @@
   // (Oct 2026). Their config entries, vJoy buttons, indicators and SETUP bindings stay,
   // so a buttonTile line here brings any of them back.
 
-  // One half of a rocker: a plain tap tile, lit while the box has that position engaged,
-  // pulsing while the selector has preselected it but the box has not engaged it yet.
-  function rockerHalf(ctl, half, indicator, label) {
-    const { tile, bar } = tileNode(ctl, "tap", `rocker-key ${half}`);
+  // One half of a rocker: a switch segment (id = range / splitter, position 1 = HI, 0 = LO). The
+  // server taps the game's toggle only when the game sits in the other position. Lit while the box
+  // has that position engaged, pulsing while the selector has preselected it but the box has not
+  // engaged it yet; with no reading, the half the server remembers shows as a faint "selected".
+  function rockerHalf(id, half, label) {
+    const position = half === "hi" ? 1 : 0, key = `${id}:${position}`;
+    const tile = h("div", { class: `tile rocker-key ${half}`, "data-switch": id, "data-pos": position, "data-key": key });
+    const bar = h("div", { class: "bar" });
+    tile.append(bar);
     const glyph = icon(half === "hi" ? ICON.chevronUp : ICON.chevronDown, 22, "0 0 24 24", { strokeWidth: 2.8 });
     const text = h("div", { class: "b3d-label" }, label);
     tile.append(glyph, text);
     updaters.push(() => {
-      const ind = model.online ? model.indicators[indicator] : null;
+      const ind = model.online ? model.indicators[id] : null;
       const engaged = !!ind && ind.state === half;
       const pending = !!ind && ind.next === half && ind.state !== half;
-      const pressed = model.pressed.has(ctl);
+      const unknown = !ind || (ind.next == null && ind.state == null);
+      const remembered = unknown && model.online && model.switches[id] === position;
+      const pressed = model.pressed.has(key);
       applyTile(tile, bar, AMB, engaged ? "on" : "off", pressed);
       if (pending && !pressed) {
         // applyTile owns boxShadow, so the pulse is written as its own outline instead
         setStyle(tile, "outline", `2px solid ${model.phase ? AMB : mix(AMB, 30)}`);
         setStyle(tile, "outlineOffset", "-2px");
+      } else if (remembered && !pressed) {
+        setStyle(tile, "outline", `1px solid ${mix(AMB, 22)}`);
+        setStyle(tile, "outlineOffset", "-1px");
       } else {
         setStyle(tile, "outline", "none");
       }
@@ -1279,23 +1289,24 @@
           ? `linear-gradient(180deg, ${mix(AMB, 34, "#0E0F11")}, ${mix(AMB, 22, "#0E0F11")})`
           : `linear-gradient(180deg, ${mix(AMB, 38, "#17191D")}, ${mix(AMB, 22, "#17191D")})`);
       }
-      const ink = engaged ? "#FFD27A" : pending ? mix(AMB, 80, "#fff") : "var(--off-ink)";
+      const dim = mix(AMB, 40, "#9AA0A8");
+      const ink = engaged ? "#FFD27A" : pending ? mix(AMB, 80, "#fff") : remembered ? dim : "var(--off-ink)";
       setStyle(glyph, "stroke", ink);
-      setStyle(text, "color", engaged ? "#FFD27A" : pending ? mix(AMB, 80, "#fff") : "var(--legend)");
+      setStyle(text, "color", engaged ? "#FFD27A" : pending ? mix(AMB, 80, "#fff") : remembered ? dim : "var(--legend)");
       setStyle(text, "textShadow", engaged ? `0 0 8px ${mix(AMB, 70)}` : "none");
     });
     return tile;
   }
 
   function gearboxRockers() {
-    const rocker = (title, indicator, hiCtl, loCtl) => h("div", { class: "rocker" },
+    const rocker = (title, id) => h("div", { class: "rocker" },
       h("div", { class: "rocker-title" }, title),
       h("div", { class: "rocker-keys" },
-        rockerHalf(hiCtl, "hi", indicator, "HI"),
-        rockerHalf(loCtl, "lo", indicator, "LO")));
+        rockerHalf(id, "hi", "HI"),
+        rockerHalf(id, "lo", "LO")));
     return h("div", { class: "gearbox" },
-      rocker("RANGE", "range", "cab_deck_btn_025", "cab_deck_btn_024"),
-      rocker("SPLIT", "splitter", "cab_deck_btn_027", "cab_deck_btn_026"));
+      rocker("RANGE", "range"),
+      rocker("SPLIT", "splitter"));
   }
 
   function cabZone() {

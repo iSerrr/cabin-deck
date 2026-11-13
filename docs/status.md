@@ -2,7 +2,7 @@
 
 ## Done
 
-- Gearbox keys on the panel (range and splitter LO / HI, vJoy 24-27, lit from the H-shifter telemetry). Owner's gaming-PC check pending.
+- Gearbox on the panel: RANGE and SPLIT as telemetry-synced toggles (vJoy 24 = Shifter Toggle 1, 25 = Shifter Toggle 2; 26-27 free). Owner's gaming-PC check pending.
 - Review notes on E1.1 and E1.2 fixed (PRs 5 and 8).
 
 - Stages 1–5 of `PRD.md` (open acceptance items are listed there).
@@ -16,7 +16,7 @@
 
 ## Next
 
-- The owner's checks on the gaming PC for E1.1 and E1.2, and for the gearbox keys (bind vJoy 24-27 in ATS, check the lit and pulsing halves on an Eaton truck).
+- The owner's checks on the gaming PC for E1.1 and E1.2, and for the gearbox (bind vJoy 24 / 25 to Shifter Toggle 1 / 2 in ATS, check that a tap on the selected position does nothing and the halves follow the game).
 
 ## Blocked / needs human
 
