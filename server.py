@@ -106,6 +106,8 @@ INDICATORS = (
     "beacon",
     "aux_front",
     "aux_roof",
+    "range",
+    "splitter",
     "air_pressure",
     "fuel",
     "nav",
@@ -647,6 +649,16 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
     nav = compute_nav(data)
+    shifter = shifter_view(data)
+
+    def gearbox_half(state_key: str, next_key: str) -> dict[str, Any]:
+        # Eaton range / splitter: engaged half and the half the selector switch has preselected.
+        state = shifter.get(state_key) if shifter else None
+        return {
+            "level": "on" if state else "off",
+            "state": state,
+            "next": shifter.get(next_key) if shifter else None,
+        }
 
     trailers = data.get("trailer") or [{}]
     hazard_phase = data.get("blinkerLeftOn") or data.get("blinkerRightOn")
@@ -667,6 +679,8 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "beacon": flag(data.get("lightsBeacon")),
         "aux_front": three_state(data.get("lightsAuxFront")),
         "aux_roof": three_state(data.get("lightsAuxRoof")),
+        "range": gearbox_half("range", "next_range"),
+        "splitter": gearbox_half("split", "next_split"),
         "air_pressure": air_pressure,
         "fuel": fuel,
         "nav": nav,
