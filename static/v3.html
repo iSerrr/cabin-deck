@@ -150,6 +150,8 @@ const ICON = {
   activate: "M9 10l-5 5 5 5 M20 4v7a4 4 0 0 1-4 4H4",
   chevronDown: "M5 9l7 8 7-8",
   chevronUp: "M5 15l7-8 7 8",
+  minus: "M5 12h14",
+  plus: "M5 12h14 M12 5v14",
   sound: "M4 10v4h4l5 4V6l-5 4H4z M16 9a4 4 0 0 1 0 6 M18.5 6.5a8 8 0 0 1 0 11",
   gear: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z",
 };
@@ -451,7 +453,7 @@ function legendTexture(glyph, plastic = "rgb(62,70,66)") {
       g.lineWidth = box === 24 ? 2.2 : 4.2;
       g.stroke(new Path2D(glyph.path));
     } else {
-      g.font = `700 ${size * .2}px ${CSS_FONT}`;
+      g.font = `700 ${size * (glyph.scale || .2)}px ${CSS_FONT}`;
       g.textAlign = "center";
       g.textBaseline = "middle";
       glyph.text.forEach((line, i) => g.fillText(line, size / 2, size / 2 + (i - (glyph.text.length - 1) / 2) * size * .24));
@@ -558,7 +560,7 @@ function buttonGeometry() {
   };
 }
 
-function pushButton(glyph, size, { halo = false } = {}) {
+function pushButton(glyph, size, { halo = false, gain = 1.8 } = {}) {
   const geo = buttonGeometry();
   const group = new THREE.Group();
   group.scale.setScalar(size / 28.8);
@@ -579,7 +581,7 @@ function pushButton(glyph, size, { halo = false } = {}) {
   const glow = { key: "", v: { k: 0 }, color: new THREE.Color() };
   const paint = () => {
     const k = glow.v.k;
-    top.emissive.copy(glow.color).multiplyScalar(k * 1.8);   // the emissive map is grey, so push it past the bloom threshold
+    top.emissive.copy(glow.color).multiplyScalar(k * gain);   // the emissive map is grey, so push it past the bloom threshold
     side.emissive.copy(glow.color).multiplyScalar(k * .35);
     top.color.set(0xc9d0cc).lerp(glow.color, Math.min(1, k) * .35);
   };
@@ -916,7 +918,53 @@ function lightsAndSignals(r) {
   });
   slideSwitch(wipers.body, { id: "wipers", labels: ["OFF", "1", "2", "3"], subs: ["", "INT", "LOW", "HIGH"] });
 
-  buttonTile(hazardR, { ctl: "cab_deck_btn_005", label: "HAZARD", color: COLOR.red, indicator: "hazards", icon: ICON.hazard, size: 136 });
+  const [hazardCol, cruiseR] = cols(hazardR, ["1fr", "2.3fr"]);
+  buttonTile(hazardCol, { ctl: "cab_deck_btn_005", label: "HAZARD", color: COLOR.red, indicator: "hazards", icon: ICON.hazard, size: 112 });
+  cruiseWell(cruiseR);
+}
+
+// CRUISE well: lamp, the set speed in big digits, and a 2x2 of buttons (ON/OFF, RES, -, +).
+// Engaged = mint lamp, mint digits and a lit ON/OFF cap with its halo; off = dim last-seen speed.
+// Text stays plain colour (no emissive), so the digits never reach the bloom threshold.
+let lastCruiseSpeed = 0;   // the last non-zero set speed this page has seen; RES returns to it
+function cruiseWell(r) {
+  well(r);
+  const head = wellHeader(r, "CRUISE");
+  const cruiseLamp = lamp(head.right - 7, head.y, Z_WELL, 7);
+  const [digitsR, gridR] = rows(inset(head.body, 0, 8, 8, 8), [40, "1fr"], 2);
+  const digitsX = digitsR.x + digitsR.w / 2 + 14;
+  const digits = txt("---", digitsX, digitsR.y + digitsR.h / 2, { size: 40, weight: 700, spacing: .04, anchor: "right", z: Z_WELL + .3 });
+  txt("MPH", digitsX + 8, digitsR.y + digitsR.h / 2 + 8, { size: 13, weight: 600, spacing: .16, anchor: "left", opacity: .6, z: Z_WELL + .3 });
+  const [top, bottom] = rows(gridR, ["1fr", "1fr"], 2);
+  const cellsR = [...cols(top, ["1fr", "1fr"], 4), ...cols(bottom, ["1fr", "1fr"], 4)];
+  const specs = [
+    { ctl: "cab_deck_btn_026", glyph: { text: ["ON/OFF"], scale: .27 }, halo: true },
+    { ctl: "cab_deck_btn_027", glyph: { text: ["RES"], scale: .3 } },
+    { ctl: "cab_deck_btn_028", glyph: { path: ICON.minus, box: 24 }, kind: "hold" },
+    { ctl: "cab_deck_btn_029", glyph: { path: ICON.plus, box: 24 }, kind: "hold" },
+  ];
+  const buttons = specs.map((spec, i) => {
+    const cell = cellsR[i];
+    const size = Math.min(cell.h - 2, cell.w) / 1.17;
+    const button = pushButton(spec.glyph, size, { halo: !!spec.halo, gain: .75 });
+    add(placeAt(button.group, cell.x + cell.w / 2, cell.y + cell.h / 2, Z_WELL));
+    hit(cell, { type: "ctl", ctl: spec.ctl, kind: spec.kind || "tap" });
+    return { spec, button };
+  });
+  updaters.push(() => {
+    const ind = model.indicators.cruise;
+    const lvl = level("cruise");
+    if (model.online && ind && ind.value > 0) lastCruiseSpeed = ind.value;
+    cruiseLamp.set(COLOR.ok, lvl);
+    if (!model.online) { setText(digits, "---"); setTextColor(digits, COLOR.legend, .3); }
+    else if (lvl === "on") { setText(digits, ind.value > 0 ? ind.value : "---"); setTextColor(digits, COLOR.ok, 1); }
+    else { setText(digits, lastCruiseSpeed || "---"); setTextColor(digits, COLOR.legend, .5); }
+    for (const { spec, button } of buttons) {
+      const pressed = model.pressed.has(spec.ctl);
+      if (spec.halo) button.set(COLOR.ok, lvl === "on" ? "dim" : "off", pressed, COLOR.ok, lvl === "on" ? "on" : "off");
+      else button.set(COLOR.ok, model.online && pressed ? "dim" : "off", pressed);
+    }
+  });
 }
 
 // Toggle face: lever in a lit ring, name under it.
@@ -2179,13 +2227,17 @@ window.addEventListener("unhandledrejection", (event) => {
 
 const demo = {
   st: { lights: 1, wipers: 0, high: false, left: false, right: false, hazards: false, engine: "on", park: false, trailer: true,
-    beacon: false, auxF: 0, auxR: 0, range: 1, splitter: 0, rangeNow: "hi", splitterNow: "lo", noGear: DEMO_NOGEAR, air: 104, fuel: 410, clock: 2 * 1440 + 14 * 60 + 5, phase: false },
+    beacon: false, auxF: 0, auxR: 0, range: 1, splitter: 0, rangeNow: "hi", splitterNow: "lo", noGear: DEMO_NOGEAR, cruiseOn: false, cruiseSpeed: 0, cruiseHold: null, air: 104, fuel: 410, clock: 2 * 1440 + 14 * 60 + 5, phase: false },
   start() {
     model.online = true;
     buildSetup([
       { key: "lights:forward", number: 1, label: "LIGHTS", part: "forward", action: "Light modes" },
       { key: "cab_deck_btn_002", number: 2, label: "HIGH BEAM", action: "High beam" },
       { key: "cab_deck_btn_003", number: 3, label: "LEFT", action: "Left blinker" },
+      { key: "cab_deck_btn_026", number: 26, label: "CRUISE", action: "Cruise control (on / off)" },
+      { key: "cab_deck_btn_027", number: 27, label: "RES", action: "Cruise control resume" },
+      { key: "cab_deck_btn_028", number: 28, label: "CRUISE \u2212", action: "Cruise control speed down" },
+      { key: "cab_deck_btn_029", number: 29, label: "CRUISE +", action: "Cruise control speed up" },
       { key: "range:forward", number: 24, label: "RANGE", part: "forward", action: "Range toggle" },
       { key: "splitter:forward", number: 25, label: "SPLITTER", part: "forward", action: "Splitter toggle" },
     ]);
@@ -2211,8 +2263,21 @@ const demo = {
       }, 250);
       return;
     }
+    const step = { cab_deck_btn_028: -1, cab_deck_btn_029: 1 }[message.id];
+    if (step !== undefined) {
+      // hold buttons: one step on press, then a repeat every 300 ms (only while cruise is on, as in ATS)
+      clearInterval(st.cruiseHold);
+      st.cruiseHold = null;
+      if (message.event !== "down") return;
+      const nudge = () => { if (st.cruiseOn) { st.cruiseSpeed = Math.max(1, st.cruiseSpeed + step); this.push(); } };
+      nudge();
+      st.cruiseHold = setInterval(nudge, 300);
+      return;
+    }
     if (message.event !== "down") return;
     const flips = {
+      cab_deck_btn_026: () => { st.cruiseOn = !st.cruiseOn; if (st.cruiseOn) st.cruiseSpeed = 62; },
+      cab_deck_btn_027: () => { if (st.cruiseSpeed > 0) st.cruiseOn = true; },
       cab_deck_btn_002: () => { st.high = !st.high; },
       cab_deck_btn_003: () => { st.left = !st.left; st.right = false; },
       cab_deck_btn_004: () => { st.right = !st.right; st.left = false; },
@@ -2240,6 +2305,7 @@ const demo = {
         engine: { level: st.engine }, lights: { level: ["off", "dim", "on"][st.lights] }, high_beam: on(st.high),
         blinker_left: blink(st.left), blinker_right: blink(st.right), hazards: blink(st.hazards),
         park_brake: on(st.park), wipers: on(st.wipers > 0), trailer: on(st.trailer), beacon: on(st.beacon),
+        cruise: { level: st.cruiseOn ? "on" : "off", value: st.cruiseOn ? st.cruiseSpeed : 0 },
         aux_front: aux(st.auxF), aux_roof: aux(st.auxR),
         range: gear(st.range, st.rangeNow), splitter: gear(st.splitter, st.splitterNow),
         air_pressure: { level: "off", value: st.air, state: st.air < 60 ? "warning" : "ok" },
