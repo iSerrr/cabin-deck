@@ -130,6 +130,7 @@ const SWIPE_MIN_PX = 60, MAX_QUEUED_ERRORS = 20;
 const STORAGE = { sound: "cabDeckSound", bright: "cabDeckBright" };
 const HAPTIC = { tap: 12, hold: 25, button: 12, detent: 10, toggle: 18, tick: 6, ui: 6, linkLost: [40, 60, 40] };
 const DEMO = new URLSearchParams(location.search).has("demo");
+const DEMO_NOGEAR = new URLSearchParams(location.search).has("nogear");
 
 const COLOR = {
   legend: "#E4DCC4", ok: "#8EE6BC", amb: "#E8A13A", ambLit: "#F0CF8A", red: "#E2463C",
@@ -1232,16 +1233,125 @@ function clockZone(r) {
 
 // --- CAB & ACTION -------------------------------------------------------------
 
-const CAB_BUTTON = 78;   // every CAB & ACTION button except ACTIVATE
+const CAB_BUTTON = 72;   // every CAB & ACTION button except ACTIVATE
+const ROCKER_COL = 124;   // the RANGE / SPLIT rockers' column
+
+// --- Gearbox rocker (RANGE, SPLIT): one bezel, two caps. HI is the top half (position 1), LO the
+// bottom (0). A half is lit amber while the box has it engaged, pulses a lit outline while the
+// selector has preselected it but the box has not engaged it yet, and shows a faint outline for the
+// half the panel remembers when the game gives no reading. The cap glows; the legend stays under the
+// bloom threshold, so it reads as a sharp glyph on a lit cap and only the outline blooms.
+const ROCKER_LEVELS = {   // fill: cap plastic, glyph: legend, ring: outline (above 1.1 it blooms)
+  engaged: { fill: 1, glyph: 1, ring: 2.2 },
+  pending: { fill: 0, glyph: .5, ring: 3.2 },
+  pendingLow: { fill: 0, glyph: .5, ring: .12 },
+  remembered: { fill: 0, glyph: .22, ring: .4 },
+  off: { fill: 0, glyph: 0, ring: 0 },
+};
+
+function rockerLegend(half, w, h) {
+  const k = 4, c = document.createElement("canvas");
+  c.width = Math.round(w * k); c.height = Math.round(h * k);
+  const g = c.getContext("2d");
+  g.strokeStyle = g.fillStyle = "rgb(246,238,214)";
+  g.lineCap = g.lineJoin = "round";
+  g.lineWidth = 2.5 * k;
+  const cx = c.width / 2, cy = c.height / 2, a = 9 * k;
+  const chevY = cy + (half === "hi" ? -9 : 9) * k;
+  g.beginPath();
+  if (half === "hi") { g.moveTo(cx - a, chevY + a * .5); g.lineTo(cx, chevY - a * .5); g.lineTo(cx + a, chevY + a * .5); }
+  else { g.moveTo(cx - a, chevY - a * .5); g.lineTo(cx, chevY + a * .5); g.lineTo(cx + a, chevY - a * .5); }
+  g.stroke();
+  g.font = `700 ${17 * k}px ${CSS_FONT}`;
+  g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText(half === "hi" ? "HI" : "LO", cx, cy + (half === "hi" ? 12 : -12) * k);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+function ringGeometry(w, h, radius, width, depth) {
+  const shape = roundedRect(w, h, radius);
+  shape.holes.push(roundedRect(w - 2 * width, h - 2 * width, Math.max(.5, radius - width)));
+  return new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 8 });
+}
+
+function rockerHalf(r, id, half) {
+  const position = half === "hi" ? 1 : 0, key = `${id}:${position}`, depth = 4;
+  const group = new THREE.Group();
+  const capMat = emissiveMaterial(0x1b211e, .3);
+  const legend = rockerLegend(half, r.w, r.h);
+  const legendMat = new THREE.MeshStandardMaterial({ map: legend, emissiveMap: legend, color: 0x8a908c, emissive: 0x000000, roughness: .5, transparent: true });
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0x0b1410, emissive: 0x000000, roughness: .5 });
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(r.w, r.h), legendMat);
+  plane.position.z = depth + .05;
+  const ring = new THREE.Mesh(ringGeometry(r.w, r.h, 6, 1.6, .5), ringMat);
+  ring.position.z = depth - .2;
+  group.add(shade(new THREE.Mesh(slabGeometry(r.w, r.h, 6, depth, 1.2), capMat)), plane, ring);
+  add(place(group, r, Z_FACE + 3));
+  hit(r, { type: "switch", id, key, pos: () => position });
+
+  const v = { fill: 0, glyph: 0, ring: 0 }, amber = new THREE.Color(COLOR.amb), lit = new THREE.Color(COLOR.ambLit);
+  const offCap = new THREE.Color(0x1b211e), offLegend = new THREE.Color(0x8a908c), warm = new THREE.Color(0xfff1cf);
+  const paint = () => {
+    capMat.emissive.copy(amber).multiplyScalar(v.fill * .5);
+    capMat.color.copy(offCap).lerp(amber, v.fill * .22);
+    legendMat.emissive.copy(lit).multiplyScalar(v.glyph * .85);
+    legendMat.color.copy(offLegend).lerp(warm, Math.min(1, v.glyph));
+    ringMat.emissive.copy(amber).multiplyScalar(v.ring);
+  };
+  let last = "", pressed = false;
+  return {
+    set(mode, isPressed) {
+      if (mode !== last) {
+        const first = !last;
+        last = mode;
+        const to = ROCKER_LEVELS[mode];
+        if (first) { Object.assign(v, to); paint(); invalidate(); }
+        else tween(v, { ...to, duration: .15, ease: "power1.out", overwrite: true, onUpdate: paint });
+      }
+      if (isPressed !== pressed) {
+        pressed = isPressed;
+        tween(group.position, { z: Z_FACE + (pressed ? .4 : 3), duration: pressed ? .06 : .35, ease: pressed ? "power2.out" : "back.out(2.5)", overwrite: true });
+        tween(group.scale, { x: pressed ? .94 : 1, y: pressed ? .96 : 1, duration: pressed ? .06 : .35, overwrite: true });
+      }
+    },
+  };
+}
+
+function gearboxRocker(r, title, id) {
+  txt(title, r.x + r.w / 2, r.y + 8, { size: 11, spacing: .24, opacity: .55 });
+  const plate = R(r.x, r.y + 20, r.w, r.h - 20);
+  slab(plate, 9, 3, .8, MAT.bezel, Z_FACE);
+  const pad = 4, split = 3;
+  const inner = inset(plate, pad);
+  const halfH = (inner.h - split) / 2;
+  slab(inner, 6.5, 3.2, .1, MAT.slot, Z_FACE);
+  const hi = rockerHalf(R(inner.x, inner.y, inner.w, halfH), id, "hi");
+  const lo = rockerHalf(R(inner.x, inner.y + halfH + split, inner.w, halfH), id, "lo");
+  updaters.push(() => {
+    const ind = model.online ? model.indicators[id] : null;
+    const unknown = !ind || (ind.state == null && ind.next == null);
+    for (const [half, part] of [["hi", hi], ["lo", lo]]) {
+      const engaged = !!ind && ind.state === half;
+      const pending = !!ind && ind.next === half && ind.state !== half;
+      const remembered = unknown && model.online && model.switches[id] === (half === "hi" ? 1 : 0);
+      const mode = !model.online ? "off" : engaged ? "engaged" : pending ? (model.phase ? "pending" : "pendingLow")
+        : remembered ? "remembered" : "off";
+      part.set(mode, model.pressed.has(`${id}:${half === "hi" ? 1 : 0}`));
+    }
+  });
+}
 
 function cabZone(r) {
   // ACTIVATE glows amber at rest and flares on a press; hold buttons light while held.
   const held = (ctl) => () => (model.pressed.has(ctl) ? "on" : "off");
   const { body } = zonePanel(r, "CAB & ACTION");
-  const [c0, c1, c2, c3] = cols(body, ["1.25fr", "1fr", "1fr", "1fr"]);
+  const [c0, c1, c2, c3, gearR] = cols(body, ["1.25fr", "1fr", "1fr", "1fr", ROCKER_COL]);
   const [r0, r1] = rows(body, ["1fr", "1fr"]);
   const cell = (c, rr) => R(c.x, rr.y, c.w, rr.h);
-  buttonTile(c0, { ctl: "cab_deck_btn_023", kind: "button", label: "ACTIVATE", color: COLOR.amb, icon: ICON.activate, iconBox: 24, size: 104,
+  buttonTile(c0, { ctl: "cab_deck_btn_023", kind: "button", label: "ACTIVATE", color: COLOR.amb, icon: ICON.activate, iconBox: 24, size: 96,
     level: () => (model.activateFlash ? "on" : "dim") });
   buttonTile(cell(c1, r0), { ctl: "cab_deck_btn_020", label: "BEACON", color: COLOR.org, indicator: "beacon", icon: ICON.beacon, size: CAB_BUTTON });
   buttonTile(cell(c2, r0), { ctl: "cab_deck_btn_021", label: "FRONT AUX", color: COLOR.amb, indicator: "aux_front", icon: ICON.auxFront, size: CAB_BUTTON });
@@ -1249,6 +1359,11 @@ function cabZone(r) {
   buttonTile(cell(c1, r1), { ctl: "cab_deck_btn_011", kind: "hold", label: "WIN DOWN", color: COLOR.amb, icon: ICON.chevronDown, iconBox: 24, size: CAB_BUTTON, level: held("cab_deck_btn_011") });
   buttonTile(cell(c2, r1), { ctl: "cab_deck_btn_012", kind: "hold", label: "WIN UP", color: COLOR.amb, icon: ICON.chevronUp, iconBox: 24, size: CAB_BUTTON, level: held("cab_deck_btn_012") });
   buttonTile(cell(c3, r1), { ctl: "cab_deck_btn_007", kind: "hold", label: "HORN", color: COLOR.amb, icon: ICON.horn, size: CAB_BUTTON, level: held("cab_deck_btn_007") });
+  // right-hand column across both rows: RANGE and SPLIT side by side, a hairline apart from the buttons
+  slab(R(gearR.x - GAP / 2 - .75, gearR.y + 6, 1.5, gearR.h - 12), .5, 1, 0, MAT.rim, Z_FACE);
+  const [rangeR, splitR] = cols(gearR, ["1fr", "1fr"], 8);
+  gearboxRocker(rangeR, "RANGE", "range");
+  gearboxRocker(splitR, "SPLIT", "splitter");
 }
 
 // --- NAV ----------------------------------------------------------------------------
@@ -2050,13 +2165,15 @@ window.addEventListener("unhandledrejection", (event) => {
 
 const demo = {
   st: { lights: 1, wipers: 0, high: false, left: false, right: false, hazards: false, engine: "on", park: false, trailer: true,
-    beacon: false, auxF: 0, auxR: 0, air: 104, fuel: 410, clock: 2 * 1440 + 14 * 60 + 5, phase: false },
+    beacon: false, auxF: 0, auxR: 0, range: 1, splitter: 0, rangeNow: "hi", splitterNow: "lo", noGear: DEMO_NOGEAR, air: 104, fuel: 410, clock: 2 * 1440 + 14 * 60 + 5, phase: false },
   start() {
     model.online = true;
     buildSetup([
       { key: "lights:forward", number: 1, label: "LIGHTS", part: "forward", action: "Light modes" },
       { key: "cab_deck_btn_002", number: 2, label: "HIGH BEAM", action: "High beam" },
       { key: "cab_deck_btn_003", number: 3, label: "LEFT", action: "Left blinker" },
+      { key: "range:forward", number: 24, label: "RANGE", part: "forward", action: "Range toggle" },
+      { key: "splitter:forward", number: 25, label: "SPLITTER", part: "forward", action: "Splitter toggle" },
     ]);
     setInterval(() => {
       const st = this.st;
@@ -2070,7 +2187,14 @@ const demo = {
   receive(message) {
     const st = this.st;
     if (message.event === "set") {
-      setTimeout(() => { st[message.id] = message.position; this.push(); }, 250);
+      setTimeout(() => {
+        st[message.id] = message.position;
+        this.push();
+        // an Eaton engages the preselected position later, when the throttle lets off
+        if (message.id === "range" || message.id === "splitter") {
+          setTimeout(() => { st[`${message.id}Now`] = message.position ? "hi" : "lo"; this.push(); }, 1500);
+        }
+      }, 250);
       return;
     }
     if (message.event !== "down") return;
@@ -2092,15 +2216,18 @@ const demo = {
     const st = this.st, on = (v) => ({ level: v ? "on" : "off" });
     const blink = (v) => ({ level: v ? (st.phase ? "on" : "dim") : "off" });
     const aux = (v) => ({ level: ["off", "dim", "on"][v] });
+    const gear = (sel, now) => (st.noGear ? { level: "off", state: null, next: null, value: null }
+      : { level: "on", state: now, next: sel ? "hi" : "lo", value: sel });
     applyState({
       type: "state",
       game: { telemetry: true, active: true, paused: false },
-      switches: { lights: st.lights, wipers: st.wipers },
+      switches: { lights: st.lights, wipers: st.wipers, range: st.range, splitter: st.splitter },
       indicators: {
         engine: { level: st.engine }, lights: { level: ["off", "dim", "on"][st.lights] }, high_beam: on(st.high),
         blinker_left: blink(st.left), blinker_right: blink(st.right), hazards: blink(st.hazards),
         park_brake: on(st.park), wipers: on(st.wipers > 0), trailer: on(st.trailer), beacon: on(st.beacon),
         aux_front: aux(st.auxF), aux_roof: aux(st.auxR),
+        range: gear(st.range, st.rangeNow), splitter: gear(st.splitter, st.splitterNow),
         air_pressure: { level: "off", value: st.air, state: st.air < 60 ? "warning" : "ok" },
         fuel: { value: st.fuel, capacity: 568, range_km: 1330, avg_l_per_km: .31, state: "ok" },
         nav: {
