@@ -24,10 +24,8 @@
     {"id": "cab_deck_btn_021", "label": "AUX FRONT", "type": "tap", "indicator": "aux_front", "action": "Front auxiliary lights"},
     {"id": "cab_deck_btn_022", "label": "AUX ROOF", "type": "tap", "indicator": "aux_roof", "action": "Roof auxiliary lights"},
     {"id": "cab_deck_btn_023", "label": "ACTIVATE", "type": "tap", "action": "Activate"},
-    {"id": "cab_deck_btn_024", "label": "RANGE LO", "type": "tap", "indicator": "range", "action": "Range low"},
-    {"id": "cab_deck_btn_025", "label": "RANGE HI", "type": "tap", "indicator": "range", "action": "Range high"},
-    {"id": "cab_deck_btn_026", "label": "SPLIT LO", "type": "tap", "indicator": "splitter", "action": "Splitter low"},
-    {"id": "cab_deck_btn_027", "label": "SPLIT HI", "type": "tap", "indicator": "splitter", "action": "Splitter high"},
+    {"id": "range", "label": "RANGE", "type": "switch", "positions": ["LO", "HI"], "cyclic": true, "forward": "cab_deck_btn_024", "indicator": "range", "position_source": "range", "forward_action": "Shifter toggle 1 (range)"},
+    {"id": "splitter", "label": "SPLIT", "type": "switch", "positions": ["LO", "HI"], "cyclic": true, "forward": "cab_deck_btn_025", "indicator": "splitter", "position_source": "splitter", "forward_action": "Shifter toggle 2 (splitter)"},
     {"id": "air", "label": "AIR PRESSURE", "type": "gauge", "indicator": "air_pressure", "min": 0, "max": 150},
     {"id": "fuel", "label": "FUEL", "type": "gauge", "indicator": "fuel", "min": 0, "max": 1},
     {"id": "nav", "label": "NAV", "type": "gauge", "indicator": "nav", "min": 0, "max": 1}

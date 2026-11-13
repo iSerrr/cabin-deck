@@ -114,7 +114,7 @@ INDICATORS = (
 )
 GAUGE_INDICATORS = ("air_pressure", "fuel", "nav")
 # Switches whose position the game reports exactly (instead of on/off only).
-POSITION_SOURCES = ("lights",)
+POSITION_SOURCES = ("lights", "range", "splitter")
 
 log = logging.getLogger("cab_deck")
 
@@ -654,10 +654,14 @@ def compute_indicators(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     def gearbox_half(state_key: str, next_key: str) -> dict[str, Any]:
         # Eaton range / splitter: engaged half and the half the selector switch has preselected.
         state = shifter.get(state_key) if shifter else None
+        selected = shifter.get(next_key) if shifter else None
+        # value is the selector position (1 = hi, 0 = lo) that the RANGE / SPLIT switches follow
+        value = {"hi": 1, "lo": 0}.get(selected)
         return {
             "level": "on" if state else "off",
             "state": state,
-            "next": shifter.get(next_key) if shifter else None,
+            "next": selected,
+            "value": value,
         }
 
     trailers = data.get("trailer") or [{}]
@@ -1066,6 +1070,8 @@ def correct_switches(state: DeckState) -> None:
             continue
         indicator = state.indicators[control["indicator"]]
         if control["position_source"]:
+            if indicator.get("value") is None:
+                continue   # no reading (no telemetry, not an Eaton): keep the remembered position
             exact = min(indicator["value"], len(control["positions"]) - 1)
             if exact != switch.position:
                 log.info("%s: game reports position %d (panel had %d)", control["id"], exact, switch.position)
