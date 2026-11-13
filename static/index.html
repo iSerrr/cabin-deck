@@ -1258,7 +1258,8 @@
   function rockerHalf(ctl, half, indicator, label) {
     const { tile, bar } = tileNode(ctl, "tap", `rocker-key ${half}`);
     const glyph = icon(half === "hi" ? ICON.chevronUp : ICON.chevronDown, 22, "0 0 24 24", { strokeWidth: 2.8 });
-    tile.append(glyph, h("div", { class: "b3d-label" }, label));
+    const text = h("div", { class: "b3d-label" }, label);
+    tile.append(glyph, text);
     updaters.push(() => {
       const ind = model.online ? model.indicators[indicator] : null;
       const engaged = !!ind && ind.state === half;
@@ -1272,7 +1273,16 @@
       } else {
         setStyle(tile, "outline", "none");
       }
-      setStyle(glyph, "stroke", inkFor(AMB, engaged ? "on" : pending ? "dim" : "off"));
+      // Engaged: amber-tinted fill and bright amber legend; pending: dim amber legend, no fill.
+      if (engaged) {
+        setStyle(tile, "background", pressed
+          ? `linear-gradient(180deg, ${mix(AMB, 34, "#0E0F11")}, ${mix(AMB, 22, "#0E0F11")})`
+          : `linear-gradient(180deg, ${mix(AMB, 38, "#17191D")}, ${mix(AMB, 22, "#17191D")})`);
+      }
+      const ink = engaged ? "#FFD27A" : pending ? mix(AMB, 80, "#fff") : "var(--off-ink)";
+      setStyle(glyph, "stroke", ink);
+      setStyle(text, "color", engaged ? "#FFD27A" : pending ? mix(AMB, 80, "#fff") : "var(--legend)");
+      setStyle(text, "textShadow", engaged ? `0 0 8px ${mix(AMB, 70)}` : "none");
     });
     return tile;
   }
