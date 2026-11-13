@@ -1881,10 +1881,24 @@ function send(message) {
   if (isOnline()) socket.send(JSON.stringify(message));
 }
 
+// The server sends its commit on every connect. After an update (Console -> Update) it comes
+// back on a new commit, and this page is still the old one, so load the new page.
+let pageCommit = null;
+function reloadIfUpdated(commit) {
+  if (!commit || commit === "unknown") return false;
+  if (pageCommit === null) pageCommit = commit;
+  if (commit === pageCommit) return false;
+  location.reload();
+  return true;
+}
+
 function handleMessage(data) {
   const message = JSON.parse(data);
   if (message.type === "pong") lastPong = Date.now();
-  else if (message.type === "layout") buildSetup(message.bindings || []);
+  else if (message.type === "layout") {
+    if (reloadIfUpdated(message.commit)) return;
+    buildSetup(message.bindings || []);
+  }
   else if (message.type === "state") applyState(message);
   render();
 }
